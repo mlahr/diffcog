@@ -60,6 +60,12 @@ Print JSON:
 diffcog --json
 ```
 
+Show loaded snapshot metadata:
+
+```bash
+diffcog --debug show-snapshots
+```
+
 Set threshold exits:
 
 ```bash

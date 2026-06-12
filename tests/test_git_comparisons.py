@@ -126,3 +126,26 @@ def test_two_explicit_refs_ignore_dirty_worktree(tmp_path: Path) -> None:
 
     assert result.source_pairs[0].before == "class Foo {}\n"
     assert result.source_pairs[0].after == "class Foo { void committed() {} }\n"
+
+
+def test_added_tracked_java_file_has_missing_before_snapshot(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/New.java", "class New {}\n")
+    git(tmp_path, "add", "src/New.java")
+
+    result = analyze(resolve_comparison([], staged=True, unstaged=False), tmp_path)
+
+    assert [file.status for file in result.files] == ["A"]
+    assert result.source_pairs[0].before is None
+    assert result.source_pairs[0].after == "class New {}\n"
+
+
+def test_deleted_tracked_java_file_has_missing_after_snapshot(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    (tmp_path / "src/Foo.java").unlink()
+
+    result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
+
+    assert [file.status for file in result.files] == ["D"]
+    assert result.source_pairs[0].before == "class Foo {}\n"
+    assert result.source_pairs[0].after is None

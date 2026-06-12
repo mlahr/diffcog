@@ -71,3 +71,20 @@ def test_negative_threshold_exits_with_error() -> None:
         parser.parse_args(["--max-new", "-1"])
 
     assert exc.value.code == EXIT_ERROR
+
+
+def test_debug_show_snapshots_parses() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["--debug", "show-snapshots"])
+
+    assert args.debug == "show-snapshots"
+
+
+def test_unknown_debug_mode_exits_with_error() -> None:
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["--debug", "dump-snapshots"])
+
+    assert exc.value.code == EXIT_ERROR

@@ -6,7 +6,7 @@ import sys
 from diffcog.analysis import analyze
 from diffcog.git import GitError
 from diffcog.models import Comparison, Endpoint, EndpointKind, Thresholds
-from diffcog.report import format_json, format_text
+from diffcog.report import format_json, format_snapshot_json, format_snapshot_text, format_text
 
 
 EXIT_OK = 0
@@ -40,6 +40,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-delta", type=_non_negative_int, default=None)
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
     parser.add_argument("--details", action="store_true", help="include changed file details in text output")
+    parser.add_argument(
+        "--debug",
+        choices=["show-snapshots"],
+        default=None,
+        help="run a debug report mode",
+    )
     return parser
 
 
@@ -55,7 +61,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"diffcog: error: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
-    if args.json:
+    if args.debug == "show-snapshots":
+        if args.json:
+            print(format_snapshot_json(result), end="")
+        else:
+            print(format_snapshot_text(result), end="")
+    elif args.json:
         print(format_json(result, thresholds), end="")
     else:
         print(format_text(result, thresholds, details=args.details), end="")

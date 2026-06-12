@@ -62,6 +62,52 @@ def format_json(result: AnalysisResult, thresholds: Thresholds) -> str:
     return json.dumps(payload, indent=2, sort_keys=False) + "\n"
 
 
+def format_snapshot_text(result: AnalysisResult) -> str:
+    lines = [
+        f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
+        "",
+        "Snapshot dump",
+    ]
+
+    if not result.source_pairs:
+        lines.extend(["", "No Java changes found."])
+        return "\n".join(lines) + "\n"
+
+    for pair in result.source_pairs:
+        lines.extend(
+            [
+                "",
+                _format_changed_file(pair.file.status, pair.file.old_path, pair.file.path),
+                f"  before: {_format_snapshot_stats(pair.before)}",
+                f"  after:  {_format_snapshot_stats(pair.after)}",
+            ]
+        )
+
+    return "\n".join(lines) + "\n"
+
+
+def format_snapshot_json(result: AnalysisResult) -> str:
+    payload: dict[str, Any] = {
+        "comparison": {
+            "mode": result.comparison.mode,
+            "before": result.comparison.before.label,
+            "after": result.comparison.after.label,
+        },
+        "debug": "show-snapshots",
+        "snapshots": [
+            {
+                "status": pair.file.status,
+                "path": pair.file.path,
+                "old_path": pair.file.old_path,
+                "before": _snapshot_stats(pair.before),
+                "after": _snapshot_stats(pair.after),
+            }
+            for pair in result.source_pairs
+        ],
+    }
+    return json.dumps(payload, indent=2, sort_keys=False) + "\n"
+
+
 def _format_signed(value: int) -> str:
     if value >= 0:
         return f"+{value}"
@@ -72,3 +118,20 @@ def _format_changed_file(status: str, old_path: str, path: str) -> str:
     if status.startswith("R") or status.startswith("C"):
         return f"{status} {old_path} -> {path}"
     return f"{status} {path}"
+
+
+def _format_snapshot_stats(source: str | None) -> str:
+    stats = _snapshot_stats(source)
+    if not stats["present"]:
+        return "missing"
+    return f"present, {stats['lines']} lines, {stats['bytes']} bytes"
+
+
+def _snapshot_stats(source: str | None) -> dict[str, bool | int]:
+    if source is None:
+        return {"present": False, "lines": 0, "bytes": 0}
+    return {
+        "present": True,
+        "lines": len(source.splitlines()),
+        "bytes": len(source.encode("utf-8")),
+    }

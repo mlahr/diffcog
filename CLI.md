@@ -292,6 +292,20 @@ diffcog --json
 
 The exact schemas and text layout are still open.
 
+## Debug Modes
+
+Show loaded before/after source snapshot metadata:
+
+```bash
+diffcog --debug show-snapshots
+diffcog main HEAD --debug show-snapshots
+diffcog --staged --debug show-snapshots
+diffcog --unstaged --debug show-snapshots
+```
+
+This prints presence, line count, and byte count for each changed Java file.
+It does not print full source content.
+
 ## Later Options
 
 Potential options after the first prototype:
