@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
-from diffcog.models import ChangedFile, Comparison, Endpoint, EndpointKind, SourcePair
+from diffcog.models import ChangedFile, Comparison, Endpoint, EndpointKind, LineRange, SourcePair
+
+
+HUNK_RE = re.compile(
+    r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
+    r"\+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@"
+)
 
 
 class GitError(RuntimeError):
@@ -30,9 +37,25 @@ def ensure_git_repo(cwd: Path | None = None) -> None:
 
 
 def discover_changed_java_files(comparison: Comparison, cwd: Path | None = None) -> list[ChangedFile]:
-    args = _diff_name_status_args(comparison)
-    output = run_git(args, cwd=cwd)
-    return [_parse_name_status_line(line) for line in output.splitlines() if line.strip()]
+    status_output = run_git(_diff_name_status_args(comparison), cwd=cwd)
+    range_output = run_git(_diff_ranges_args(comparison), cwd=cwd)
+    ranges_by_path = _parse_diff_ranges(range_output)
+    files = []
+    for line in status_output.splitlines():
+        if not line.strip():
+            continue
+        file = _parse_name_status_line(line)
+        ranges = ranges_by_path.get(file.path, ([], []))
+        files.append(
+            ChangedFile(
+                status=file.status,
+                old_path=file.old_path,
+                path=file.path,
+                old_ranges=ranges[0],
+                new_ranges=ranges[1],
+            )
+        )
+    return files
 
 
 def load_source_pairs(
@@ -75,6 +98,14 @@ def _diff_name_status_args(comparison: Comparison) -> list[str]:
     raise GitError(f"unsupported comparison: {before.label} -> {after.label}")
 
 
+def _diff_ranges_args(comparison: Comparison) -> list[str]:
+    args = _diff_name_status_args(comparison)
+    range_args = [arg for arg in args if arg != "--name-status"]
+    pathspec_index = range_args.index("--")
+    range_args.insert(pathspec_index, "--unified=0")
+    return range_args
+
+
 def _parse_name_status_line(line: str) -> ChangedFile:
     parts = line.split("\t")
     status = parts[0]
@@ -83,11 +114,71 @@ def _parse_name_status_line(line: str) -> ChangedFile:
     if status_kind in {"R", "C"}:
         if len(parts) != 3:
             raise GitError(f"unexpected rename/copy status line: {line}")
-        return ChangedFile(status=status, old_path=parts[1], path=parts[2])
+        return ChangedFile(status=status, old_path=parts[1], path=parts[2], old_ranges=[], new_ranges=[])
 
     if len(parts) != 2:
         raise GitError(f"unexpected status line: {line}")
-    return ChangedFile(status=status, old_path=parts[1], path=parts[1])
+    return ChangedFile(status=status, old_path=parts[1], path=parts[1], old_ranges=[], new_ranges=[])
+
+
+def _parse_diff_ranges(output: str) -> dict[str, tuple[list[LineRange], list[LineRange]]]:
+    ranges_by_path: dict[str, tuple[list[LineRange], list[LineRange]]] = {}
+    current_path: str | None = None
+    old_path: str | None = None
+
+    for line in output.splitlines():
+        if line.startswith("--- "):
+            old_path = _parse_old_diff_path(line)
+            continue
+
+        if line.startswith("+++ "):
+            current_path = _parse_new_diff_path(line) or old_path
+            if current_path is not None:
+                ranges_by_path.setdefault(current_path, ([], []))
+            continue
+
+        if current_path is None:
+            continue
+
+        match = HUNK_RE.match(line)
+        if match is None:
+            continue
+
+        old_range = _line_range(match.group("old_start"), match.group("old_count"))
+        new_range = _line_range(match.group("new_start"), match.group("new_count"))
+        old_ranges, new_ranges = ranges_by_path.setdefault(current_path, ([], []))
+        if old_range is not None:
+            old_ranges.append(old_range)
+        if new_range is not None:
+            new_ranges.append(new_range)
+
+    return ranges_by_path
+
+
+def _parse_new_diff_path(line: str) -> str | None:
+    path = line[4:]
+    if path == "/dev/null":
+        return None
+    if path.startswith("b/"):
+        return path[2:]
+    return path
+
+
+def _parse_old_diff_path(line: str) -> str | None:
+    path = line[4:]
+    if path == "/dev/null":
+        return None
+    if path.startswith("a/"):
+        return path[2:]
+    return path
+
+
+def _line_range(start: str, count: str | None) -> LineRange | None:
+    parsed_start = int(start)
+    parsed_count = 1 if count is None else int(count)
+    if parsed_count == 0:
+        return None
+    return LineRange(start=parsed_start, end=parsed_start + parsed_count - 1)
 
 
 def _load_endpoint_source(endpoint: Endpoint, path: str, cwd: Path | None) -> str | None:

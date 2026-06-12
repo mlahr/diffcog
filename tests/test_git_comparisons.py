@@ -5,6 +5,7 @@ from pathlib import Path
 
 from diffcog.analysis import analyze
 from diffcog.cli import resolve_comparison
+from diffcog.report import format_symbol_text
 
 
 def git(repo: Path, *args: str) -> str:
@@ -149,3 +150,42 @@ def test_deleted_tracked_java_file_has_missing_after_snapshot(tmp_path: Path) ->
     assert [file.status for file in result.files] == ["D"]
     assert result.source_pairs[0].before == "class Foo {}\n"
     assert result.source_pairs[0].after is None
+
+
+def test_show_symbols_report_for_modified_java_file(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void a() {} }\n")
+
+    result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
+    output = format_symbol_text(result)
+
+    assert "Symbol dump" in output
+    assert "Foo#a/0 method lines 1-1" in output
+
+
+def test_show_symbols_report_for_added_java_file(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/New.java", "class New { void run() {} }\n")
+    git(tmp_path, "add", "src/New.java")
+
+    result = analyze(resolve_comparison([], staged=True, unstaged=False), tmp_path)
+    output = format_symbol_text(result)
+
+    assert "A src/New.java" in output
+    assert "  added:" in output
+    assert "New#run/0 method lines 1-1" in output
+
+
+def test_show_symbols_report_for_deleted_java_file(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void a() {} }\n")
+    git(tmp_path, "add", "src/Foo.java")
+    git(tmp_path, "commit", "-m", "add method")
+    (tmp_path / "src/Foo.java").unlink()
+
+    result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
+    output = format_symbol_text(result)
+
+    assert "D src/Foo.java" in output
+    assert "  removed:" in output
+    assert "Foo#a/0 method lines 1-1" in output

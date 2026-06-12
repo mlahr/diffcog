@@ -1,5 +1,7 @@
 # AGENTS.md
 
+Never show code unless I explicitly asked for it. Talk concepts.
+
 ## Project Notes
 
 - This is a Python prototype using `uv`, `pytest`, and `ruff`.

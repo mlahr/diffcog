@@ -306,6 +306,17 @@ diffcog --unstaged --debug show-snapshots
 This prints presence, line count, and byte count for each changed Java file.
 It does not print full source content.
 
+Show parsed Java symbols:
+
+```bash
+diffcog --debug show-symbols
+diffcog main HEAD --debug show-symbols
+diffcog --debug show-symbols --json
+```
+
+This parses loaded Java snapshots and prints extracted methods and constructors.
+It does not print the full AST.
+
 ## Later Options
 
 Potential options after the first prototype:

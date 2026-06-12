@@ -4,9 +4,17 @@ import argparse
 import sys
 
 from diffcog.analysis import analyze
+from diffcog.errors import DiffcogError
 from diffcog.git import GitError
 from diffcog.models import Comparison, Endpoint, EndpointKind, Thresholds
-from diffcog.report import format_json, format_snapshot_json, format_snapshot_text, format_text
+from diffcog.report import (
+    format_json,
+    format_snapshot_json,
+    format_snapshot_text,
+    format_symbol_json,
+    format_symbol_text,
+    format_text,
+)
 
 
 EXIT_OK = 0
@@ -42,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--details", action="store_true", help="include changed file details in text output")
     parser.add_argument(
         "--debug",
-        choices=["show-snapshots"],
+        choices=["show-snapshots", "show-symbols"],
         default=None,
         help="run a debug report mode",
     )
@@ -57,19 +65,28 @@ def main(argv: list[str] | None = None) -> int:
         comparison = resolve_comparison(args.refs, staged=args.staged, unstaged=args.unstaged)
         thresholds = Thresholds(max_new=args.max_new, max_delta=args.max_delta)
         result = analyze(comparison)
-    except (ValueError, GitError) as exc:
+    except (ValueError, GitError, DiffcogError) as exc:
         print(f"diffcog: error: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
-    if args.debug == "show-snapshots":
-        if args.json:
-            print(format_snapshot_json(result), end="")
+    try:
+        if args.debug == "show-snapshots":
+            if args.json:
+                print(format_snapshot_json(result), end="")
+            else:
+                print(format_snapshot_text(result), end="")
+        elif args.debug == "show-symbols":
+            if args.json:
+                print(format_symbol_json(result), end="")
+            else:
+                print(format_symbol_text(result), end="")
+        elif args.json:
+            print(format_json(result, thresholds), end="")
         else:
-            print(format_snapshot_text(result), end="")
-    elif args.json:
-        print(format_json(result, thresholds), end="")
-    else:
-        print(format_text(result, thresholds, details=args.details), end="")
+            print(format_text(result, thresholds, details=args.details), end="")
+    except DiffcogError as exc:
+        print(f"diffcog: error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
 
     if result.threshold_failed(thresholds):
         return EXIT_THRESHOLD

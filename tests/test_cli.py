@@ -81,6 +81,14 @@ def test_debug_show_snapshots_parses() -> None:
     assert args.debug == "show-snapshots"
 
 
+def test_debug_show_symbols_parses() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["--debug", "show-symbols"])
+
+    assert args.debug == "show-symbols"
+
+
 def test_unknown_debug_mode_exits_with_error() -> None:
     parser = build_parser()
 

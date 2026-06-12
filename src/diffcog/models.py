@@ -28,6 +28,14 @@ class ChangedFile:
     status: str
     path: str
     old_path: str
+    old_ranges: list["LineRange"]
+    new_ranges: list["LineRange"]
+
+
+@dataclass(frozen=True)
+class LineRange:
+    start: int
+    end: int
 
 
 @dataclass(frozen=True)

@@ -8,12 +8,14 @@ complexity analyzer is still a placeholder and reports zero scores.
 ## Install
 
 ```bash
-uv tool install -e /path/to/diff-complexity
+uv tool install --force -e /path/to/diff-complexity
 ```
 
 Then run `diffcog` from any git repository.
 
 The CLI analyzes the current working directory.
+
+Run the same install command again after dependencies change.
 
 ## Usage
 
@@ -64,6 +66,12 @@ Show loaded snapshot metadata:
 
 ```bash
 diffcog --debug show-snapshots
+```
+
+Show parsed Java symbols:
+
+```bash
+diffcog --debug show-symbols
 ```
 
 Set threshold exits:
