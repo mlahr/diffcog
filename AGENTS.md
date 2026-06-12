@@ -6,4 +6,4 @@
 - Keep the CLI contract aligned with `CLI.md`.
 - Use tracked `.java` files only unless the scope is explicitly changed.
 - Keep complexity scoring separate from git plumbing and reporting.
-- Run `uv run pytest` and `uv run ruff check .` before handing off changes.
+- Run `uv run diffcog-check` before handing off changes.

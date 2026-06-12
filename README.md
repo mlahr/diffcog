@@ -7,68 +7,64 @@ complexity analyzer is still a placeholder and reports zero scores.
 
 ## Install
 
-Use `uv` from the repository root:
-
 ```bash
-uv sync
+uv tool install -e /path/to/diff-complexity
 ```
 
-Run the CLI:
+Then run `diffcog` from any git repository.
 
-```bash
-uv run diffcog
-```
+The CLI analyzes the current working directory.
 
 ## Usage
 
 Compare `HEAD` against the current working tree:
 
 ```bash
-uv run diffcog
+diffcog
 ```
 
 Compare a base ref against the working tree:
 
 ```bash
-uv run diffcog main
+diffcog main
 ```
 
 Compare two refs:
 
 ```bash
-uv run diffcog HEAD~1 HEAD
-uv run diffcog main HEAD
+diffcog HEAD~1 HEAD
+diffcog main HEAD
 ```
 
 Compare `HEAD` against staged changes:
 
 ```bash
-uv run diffcog --staged
+diffcog --staged
 ```
 
 Compare staged changes against unstaged working tree changes:
 
 ```bash
-uv run diffcog --unstaged
+diffcog --unstaged
 ```
 
 Show changed Java files:
 
 ```bash
-uv run diffcog --details
+diffcog --details
 ```
 
 Print JSON:
 
 ```bash
-uv run diffcog --json
+diffcog --json
 ```
 
 Set threshold exits:
 
 ```bash
-uv run diffcog --max-new 10
-uv run diffcog --max-delta 5
+diffcog --max-new 10
+diffcog --max-delta 5
 ```
 
 Exit codes:
@@ -91,14 +87,15 @@ for design notes.
 
 ## Development
 
-Run tests:
+Check the codebase:
+
+```bash
+uv run diffcog-check
+```
+
+Run tests or lint separately:
 
 ```bash
 uv run pytest
-```
-
-Run lint:
-
-```bash
 uv run ruff check .
 ```
