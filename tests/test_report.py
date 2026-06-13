@@ -87,6 +87,7 @@ def test_json_report_shape() -> None:
         "before": "HEAD",
         "after": "working tree",
     }
+    assert payload["ruleset"] == "java.default"
     assert payload["files"] == [
         {"status": "M", "path": "src/Foo.java", "old_path": "src/Foo.java"}
     ]
@@ -392,6 +393,7 @@ def test_complexity_json_report_shape() -> None:
     payload = json.loads(format_complexity_json(build_complexity_debug(result)))
 
     assert payload["debug"] == "show-complexity"
+    assert payload["ruleset"] == "java.default"
     assert payload["files"][0]["callables"][0]["status"] == "added"
     assert payload["files"][0]["callables"][0]["score"] == 1
     assert payload["files"][0]["callables"][0]["contributions"][0]["rule_id"] == "java.if"

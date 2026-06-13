@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 def format_text(result: AnalysisResult, thresholds: Thresholds, details: bool = False) -> str:
     lines = [
         f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
+        f"Rule set: {result.ruleset_id}",
         "",
     ]
 
@@ -48,6 +49,7 @@ def format_json(result: AnalysisResult, thresholds: Thresholds) -> str:
             "before": result.comparison.before.label,
             "after": result.comparison.after.label,
         },
+        "ruleset": result.ruleset_id,
         "files": _json_files_payload(result),
         "new_complexity": result.new_complexity,
         "removed_complexity": result.removed_complexity,
@@ -64,6 +66,7 @@ def format_json(result: AnalysisResult, thresholds: Thresholds) -> str:
 def format_snapshot_text(result: AnalysisResult) -> str:
     lines = [
         f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
+        f"Rule set: {result.ruleset_id}",
         "",
         "Snapshot dump",
     ]
@@ -93,6 +96,7 @@ def format_snapshot_json(result: AnalysisResult) -> str:
             "after": result.comparison.after.label,
         },
         "debug": "show-snapshots",
+        "ruleset": result.ruleset_id,
         "snapshots": [
             {
                 "status": pair.file.status,
@@ -139,6 +143,7 @@ def format_symbol_json(result: SymbolDebugResult) -> str:
             "after": result.comparison.after.label,
         },
         "debug": "show-symbols",
+        "ruleset": result.ruleset_id,
         "files": [
             {
                 "status": file.file.status,
@@ -166,6 +171,7 @@ def format_symbol_json(result: SymbolDebugResult) -> str:
 def format_complexity_text(result: ComplexityDebugResult) -> str:
     lines = [
         f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
+        f"Rule set: {result.ruleset_id}",
         "",
         "Complexity dump",
     ]
@@ -194,6 +200,7 @@ def format_complexity_json(result: ComplexityDebugResult) -> str:
             "after": result.comparison.after.label,
         },
         "debug": "show-complexity",
+        "ruleset": result.ruleset_id,
         "files": [],
     }
     for file in result.files:

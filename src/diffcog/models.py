@@ -81,6 +81,7 @@ class AnalysisResult:
     comparison: Comparison
     files: list[ChangedFile]
     source_pairs: list[SourcePair]
+    ruleset_id: str = "java.default"
     file_deltas: list[FileComplexityDelta] = field(default_factory=list)
     new_complexity: int = 0
     removed_complexity: int = 0

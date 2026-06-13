@@ -29,6 +29,7 @@ class SymbolFile:
 @dataclass(frozen=True)
 class SymbolDebugResult:
     comparison: Comparison
+    ruleset_id: str
     files: list[SymbolFile]
 
 
@@ -48,6 +49,7 @@ class ComplexityFile:
 @dataclass(frozen=True)
 class ComplexityDebugResult:
     comparison: Comparison
+    ruleset_id: str
     files: list[ComplexityFile]
 
 
@@ -74,11 +76,16 @@ def build_symbol_debug(result: AnalysisResult) -> SymbolDebugResult:
                 unmapped_after_ranges=unmapped_ranges(pair.file.new_ranges, after.callables),
             )
         )
-    return SymbolDebugResult(comparison=result.comparison, files=files)
+    return SymbolDebugResult(
+        comparison=result.comparison,
+        ruleset_id=result.ruleset_id,
+        files=files,
+    )
 
 
-def build_complexity_debug(result: AnalysisResult) -> ComplexityDebugResult:
+def build_complexity_debug(result: AnalysisResult, ruleset: object | None = None) -> ComplexityDebugResult:
     score_callable = _load_java_scorer()
+    active_ruleset = ruleset
     files = []
     for symbol_file in build_symbol_debug(result).files:
         callables = []
@@ -87,7 +94,7 @@ def build_complexity_debug(result: AnalysisResult) -> ComplexityDebugResult:
                 ComplexityCallable(
                     status="modified",
                     callable=after_callable,
-                    result=score_callable(after_callable),
+                    result=score_callable(after_callable, active_ruleset),
                 )
             )
         for after_callable in symbol_file.added:
@@ -95,7 +102,7 @@ def build_complexity_debug(result: AnalysisResult) -> ComplexityDebugResult:
                 ComplexityCallable(
                     status="added",
                     callable=after_callable,
-                    result=score_callable(after_callable),
+                    result=score_callable(after_callable, active_ruleset),
                 )
             )
         for before_callable in symbol_file.removed:
@@ -103,11 +110,12 @@ def build_complexity_debug(result: AnalysisResult) -> ComplexityDebugResult:
                 ComplexityCallable(
                     status="removed",
                     callable=before_callable,
-                    result=score_callable(before_callable),
+                    result=score_callable(before_callable, active_ruleset),
                 )
             )
         files.append(ComplexityFile(file=symbol_file.file, callables=callables))
-    return ComplexityDebugResult(comparison=result.comparison, files=files)
+    ruleset_id = getattr(active_ruleset, "id", result.ruleset_id)
+    return ComplexityDebugResult(comparison=result.comparison, ruleset_id=ruleset_id, files=files)
 
 
 def _load_java_parser():

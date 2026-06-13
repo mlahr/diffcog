@@ -57,6 +57,18 @@ CONTROL_FLOW_NODE_TYPES = {
 }
 
 
+def get_ruleset(ruleset_id: str) -> RuleSet:
+    try:
+        return JAVA_RULESETS[ruleset_id]
+    except KeyError as exc:
+        available = ", ".join(list_ruleset_ids())
+        raise ValueError(f"unknown Java rule set '{ruleset_id}' (available: {available})") from exc
+
+
+def list_ruleset_ids() -> list[str]:
+    return sorted(JAVA_RULESETS)
+
+
 def score_callable(
     callable_: JavaCallable, ruleset: RuleSet | None = None
 ) -> ComplexityResult:
@@ -121,44 +133,65 @@ def _is_boolean_binary_expression(node: Node) -> bool:
     return any(child.type in {"&&", "||"} for child in node.children)
 
 
+JAVA_CONTROL_FLOW_RULES = [
+    ComplexityRule(
+        id="java.if",
+        node_types={"if_statement"},
+        score=_control_flow_rule("java.if", "if statement"),
+    ),
+    ComplexityRule(
+        id="java.loop",
+        node_types={
+            "for_statement",
+            "enhanced_for_statement",
+            "while_statement",
+            "do_statement",
+        },
+        score=_control_flow_rule("java.loop", "loop"),
+    ),
+    ComplexityRule(
+        id="java.catch",
+        node_types={"catch_clause"},
+        score=_control_flow_rule("java.catch", "catch clause"),
+    ),
+    ComplexityRule(
+        id="java.switch",
+        node_types={"switch_expression", "switch_statement"},
+        score=_control_flow_rule("java.switch", "switch"),
+    ),
+    ComplexityRule(
+        id="java.ternary",
+        node_types={"ternary_expression"},
+        score=_control_flow_rule("java.ternary", "ternary expression"),
+    ),
+]
+
+
+JAVA_BOOLEAN_CHAIN_RULE = ComplexityRule(
+    id="java.boolean_chain",
+    node_types={"binary_expression"},
+    score=_boolean_chain_rule,
+)
+
+
+JAVA_CONTROL_FLOW_RULESET = RuleSet(
+    id="java.control-flow",
+    rules=JAVA_CONTROL_FLOW_RULES,
+    nesting_node_types=CONTROL_FLOW_NODE_TYPES,
+)
+
+
 DEFAULT_JAVA_RULESET = RuleSet(
     id="java.default",
     rules=[
-        ComplexityRule(
-            id="java.if",
-            node_types={"if_statement"},
-            score=_control_flow_rule("java.if", "if statement"),
-        ),
-        ComplexityRule(
-            id="java.loop",
-            node_types={
-                "for_statement",
-                "enhanced_for_statement",
-                "while_statement",
-                "do_statement",
-            },
-            score=_control_flow_rule("java.loop", "loop"),
-        ),
-        ComplexityRule(
-            id="java.catch",
-            node_types={"catch_clause"},
-            score=_control_flow_rule("java.catch", "catch clause"),
-        ),
-        ComplexityRule(
-            id="java.switch",
-            node_types={"switch_expression", "switch_statement"},
-            score=_control_flow_rule("java.switch", "switch"),
-        ),
-        ComplexityRule(
-            id="java.ternary",
-            node_types={"ternary_expression"},
-            score=_control_flow_rule("java.ternary", "ternary expression"),
-        ),
-        ComplexityRule(
-            id="java.boolean_chain",
-            node_types={"binary_expression"},
-            score=_boolean_chain_rule,
-        ),
+        *JAVA_CONTROL_FLOW_RULES,
+        JAVA_BOOLEAN_CHAIN_RULE,
     ],
     nesting_node_types=CONTROL_FLOW_NODE_TYPES,
 )
+
+
+JAVA_RULESETS = {
+    JAVA_CONTROL_FLOW_RULESET.id: JAVA_CONTROL_FLOW_RULESET,
+    DEFAULT_JAVA_RULESET.id: DEFAULT_JAVA_RULESET,
+}

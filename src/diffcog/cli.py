@@ -7,6 +7,7 @@ from diffcog.analysis import analyze
 from diffcog.debug_analysis import build_complexity_debug, build_symbol_debug
 from diffcog.errors import DiffcogError
 from diffcog.git import GitError
+from diffcog.languages.java.complexity import DEFAULT_JAVA_RULESET, get_ruleset, list_ruleset_ids
 from diffcog.models import Comparison, Endpoint, EndpointKind, Thresholds
 from diffcog.report import (
     format_json,
@@ -52,6 +53,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
     parser.add_argument("--details", action="store_true", help="include changed file details in text output")
     parser.add_argument(
+        "--ruleset",
+        default=DEFAULT_JAVA_RULESET.id,
+        help="Java complexity rule set to use",
+    )
+    parser.add_argument(
+        "--list-rulesets",
+        action="store_true",
+        help="list available Java complexity rule sets and exit",
+    )
+    parser.add_argument(
         "--debug",
         choices=["show-snapshots", "show-symbols", "show-complexity"],
         default=None,
@@ -65,9 +76,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.list_rulesets:
+            print(format_ruleset_list(list_ruleset_ids()), end="")
+            return EXIT_OK
+
+        ruleset = get_ruleset(args.ruleset)
         comparison = resolve_comparison(args.refs, staged=args.staged, unstaged=args.unstaged)
         thresholds = Thresholds(max_new=args.max_new, max_delta=args.max_delta)
-        result = analyze(comparison)
+        result = analyze(comparison, ruleset=ruleset)
     except (ValueError, GitError, DiffcogError) as exc:
         print(f"diffcog: error: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -85,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(format_symbol_text(symbol_debug), end="")
         elif args.debug == "show-complexity":
-            complexity_debug = build_complexity_debug(result)
+            complexity_debug = build_complexity_debug(result, ruleset)
             if args.json:
                 print(format_complexity_json(complexity_debug), end="")
             else:
@@ -156,6 +172,11 @@ def _non_negative_int(value: str) -> int:
     if parsed < 0:
         raise argparse.ArgumentTypeError("must be a non-negative integer")
     return parsed
+
+
+def format_ruleset_list(ruleset_ids: list[str]) -> str:
+    lines = ["Available Java rule sets:", *[f"  {ruleset_id}" for ruleset_id in ruleset_ids]]
+    return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":

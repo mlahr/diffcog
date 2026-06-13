@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from diffcog.git import discover_changed_java_files, ensure_git_repo, load_source_pairs
-from diffcog.languages.java.complexity import score_callable
+from diffcog.languages.java.complexity import DEFAULT_JAVA_RULESET, RuleSet, score_callable
 from diffcog.languages.java.parser import parse_snapshot
 from diffcog.languages.java.selection import changed_callables, classify_callables, unmapped_ranges
 from diffcog.models import (
@@ -15,11 +15,16 @@ from diffcog.models import (
 )
 
 
-def analyze(comparison: Comparison, cwd: Path | None = None) -> AnalysisResult:
+def analyze(
+    comparison: Comparison, cwd: Path | None = None, ruleset: RuleSet | None = None
+) -> AnalysisResult:
+    active_ruleset = ruleset or DEFAULT_JAVA_RULESET
     ensure_git_repo(cwd)
     files = discover_changed_java_files(comparison, cwd)
     source_pairs = load_source_pairs(comparison, files, cwd)
-    file_deltas = [_analyze_source_pair(source_pair) for source_pair in source_pairs]
+    file_deltas = [
+        _analyze_source_pair(source_pair, active_ruleset) for source_pair in source_pairs
+    ]
     new_complexity = sum(
         max(callable_delta.delta, 0)
         for file_delta in file_deltas
@@ -34,6 +39,7 @@ def analyze(comparison: Comparison, cwd: Path | None = None) -> AnalysisResult:
         comparison=comparison,
         files=files,
         source_pairs=source_pairs,
+        ruleset_id=active_ruleset.id,
         file_deltas=file_deltas,
         new_complexity=new_complexity,
         removed_complexity=removed_complexity,
@@ -41,7 +47,7 @@ def analyze(comparison: Comparison, cwd: Path | None = None) -> AnalysisResult:
     )
 
 
-def _analyze_source_pair(source_pair: SourcePair) -> FileComplexityDelta:
+def _analyze_source_pair(source_pair: SourcePair, ruleset: RuleSet) -> FileComplexityDelta:
     before = parse_snapshot(source_pair.before)
     after = parse_snapshot(source_pair.after)
     before_callables = changed_callables(before.callables, source_pair.file.old_ranges)
@@ -50,8 +56,8 @@ def _analyze_source_pair(source_pair: SourcePair) -> FileComplexityDelta:
 
     callable_deltas = []
     for before_callable, after_callable in modified:
-        before_result = score_callable(before_callable)
-        after_result = score_callable(after_callable)
+        before_result = score_callable(before_callable, ruleset)
+        after_result = score_callable(after_callable, ruleset)
         callable_deltas.append(
             CallableComplexityDelta(
                 status="modified",
@@ -66,7 +72,7 @@ def _analyze_source_pair(source_pair: SourcePair) -> FileComplexityDelta:
         )
 
     for after_callable in added:
-        after_result = score_callable(after_callable)
+        after_result = score_callable(after_callable, ruleset)
         callable_deltas.append(
             CallableComplexityDelta(
                 status="added",
@@ -81,7 +87,7 @@ def _analyze_source_pair(source_pair: SourcePair) -> FileComplexityDelta:
         )
 
     for before_callable in removed:
-        before_result = score_callable(before_callable)
+        before_result = score_callable(before_callable, ruleset)
         callable_deltas.append(
             CallableComplexityDelta(
                 status="removed",

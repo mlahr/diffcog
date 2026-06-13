@@ -64,6 +64,19 @@ Compare the index to unstaged changes only:
 diffcog --unstaged
 ```
 
+Select a built-in Java complexity rule set:
+
+```bash
+diffcog --ruleset java.default
+diffcog --ruleset java.control-flow
+```
+
+List available rule sets:
+
+```bash
+diffcog --list-rulesets
+```
+
 ## Semantics
 
 The command:
@@ -160,6 +173,25 @@ after  = HEAD
 ```
 
 Uncommitted changes do not affect that result.
+
+## Rule Sets
+
+The default rule set is:
+
+```text
+java.default
+```
+
+Built-in rule sets:
+
+```text
+java.default       control flow plus boolean operator chains
+java.control-flow  control flow only
+```
+
+Unknown rule set names are usage errors.
+
+`--list-rulesets` prints available rule set IDs and exits without reading git state.
 
 ## Why Not Raw Diff As The Main Input?
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from diffcog.cli import EXIT_ERROR, EXIT_THRESHOLD, build_parser, main, resolve_comparison
+from diffcog.cli import EXIT_ERROR, EXIT_OK, EXIT_THRESHOLD, build_parser, main, resolve_comparison
 from diffcog.models import AnalysisResult, Comparison, Endpoint, EndpointKind
 
 
@@ -120,7 +120,7 @@ def test_max_new_threshold_exits_two(monkeypatch: pytest.MonkeyPatch) -> None:
         removed_complexity=0,
         net_delta=2,
     )
-    monkeypatch.setattr("diffcog.cli.analyze", lambda _comparison: result)
+    monkeypatch.setattr("diffcog.cli.analyze", lambda _comparison, ruleset: result)
 
     assert main(["--max-new", "1"]) == EXIT_THRESHOLD
 
@@ -139,6 +139,27 @@ def test_max_delta_threshold_exits_two(monkeypatch: pytest.MonkeyPatch) -> None:
         removed_complexity=0,
         net_delta=2,
     )
-    monkeypatch.setattr("diffcog.cli.analyze", lambda _comparison: result)
+    monkeypatch.setattr("diffcog.cli.analyze", lambda _comparison, ruleset: result)
 
     assert main(["--max-delta", "1"]) == EXIT_THRESHOLD
+
+
+def test_list_rulesets_exits_without_analysis(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    def fail_analysis(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("analysis should not run")
+
+    monkeypatch.setattr("diffcog.cli.analyze", fail_analysis)
+
+    assert main(["--list-rulesets"]) == EXIT_OK
+
+    output = capsys.readouterr().out
+    assert "Available Java rule sets:" in output
+    assert "java.default" in output
+    assert "java.control-flow" in output
+
+
+def test_unknown_ruleset_exits_with_error(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--ruleset", "java.missing"]) == EXIT_ERROR
+
+    error = capsys.readouterr().err
+    assert "unknown Java rule set 'java.missing'" in error

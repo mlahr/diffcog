@@ -62,6 +62,13 @@ Print JSON:
 diffcog --json
 ```
 
+Select a built-in Java rule set:
+
+```bash
+diffcog --ruleset java.control-flow
+diffcog --list-rulesets
+```
+
 Show loaded snapshot metadata:
 
 ```bash
@@ -101,6 +108,7 @@ Exit codes:
 - Uses git refs, index, and working tree states as inputs.
 - Excludes untracked files for now.
 - Reports custom complexity totals for changed Java methods/constructors.
+- Uses `java.default` unless another built-in rule set is selected.
 
 See [CLI.md](CLI.md) for the CLI contract and [BRAINSTORMING.md](BRAINSTORMING.md)
 for design notes.

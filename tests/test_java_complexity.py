@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from diffcog.languages.java.complexity import score_callable
+import pytest
+
+from diffcog.languages.java.complexity import get_ruleset, list_ruleset_ids, score_callable
 from diffcog.languages.java.parser import parse_snapshot
 
 
@@ -55,3 +57,20 @@ def test_boolean_chain_scores_one() -> None:
     assert contribution_ids("class Foo { void a() { if (a && b && c) { run(); } } }\n").count(
         "java.boolean_chain"
     ) == 1
+
+
+def test_control_flow_ruleset_excludes_boolean_chain() -> None:
+    snapshot = parse_snapshot("class Foo { void a() { if (a && b && c) { run(); } } }\n")
+    callable_ = snapshot.callables[0]
+
+    assert score_callable(callable_, get_ruleset("java.default")).score == 2
+    assert score_callable(callable_, get_ruleset("java.control-flow")).score == 1
+
+
+def test_ruleset_registry_lists_known_rulesets() -> None:
+    assert list_ruleset_ids() == ["java.control-flow", "java.default"]
+
+
+def test_unknown_ruleset_errors_with_available_rulesets() -> None:
+    with pytest.raises(ValueError, match="available: java.control-flow, java.default"):
+        get_ruleset("java.missing")
