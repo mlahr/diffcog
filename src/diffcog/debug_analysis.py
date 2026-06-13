@@ -84,36 +84,45 @@ def build_symbol_debug(result: AnalysisResult) -> SymbolDebugResult:
 
 
 def build_complexity_debug(result: AnalysisResult, ruleset: object | None = None) -> ComplexityDebugResult:
+    parse_snapshot = _load_java_parser()
+    resolve_semantics = _load_java_resolver()
     score_callable = _load_java_scorer()
     active_ruleset = ruleset
     files = []
-    for symbol_file in build_symbol_debug(result).files:
+    for pair in result.source_pairs:
+        before = parse_snapshot(pair.before)
+        after = parse_snapshot(pair.after)
+        before_semantics = resolve_semantics(before.callables)
+        after_semantics = resolve_semantics(after.callables)
+        before_callables = changed_callables(before.callables, pair.file.old_ranges)
+        after_callables = changed_callables(after.callables, pair.file.new_ranges)
+        modified, added, removed = classify_callables(before_callables, after_callables)
         callables = []
-        for _, after_callable in symbol_file.modified:
+        for _, after_callable in modified:
             callables.append(
                 ComplexityCallable(
                     status="modified",
                     callable=after_callable,
-                    result=score_callable(after_callable, active_ruleset),
+                    result=score_callable(after_callable, active_ruleset, after_semantics),
                 )
             )
-        for after_callable in symbol_file.added:
+        for after_callable in added:
             callables.append(
                 ComplexityCallable(
                     status="added",
                     callable=after_callable,
-                    result=score_callable(after_callable, active_ruleset),
+                    result=score_callable(after_callable, active_ruleset, after_semantics),
                 )
             )
-        for before_callable in symbol_file.removed:
+        for before_callable in removed:
             callables.append(
                 ComplexityCallable(
                     status="removed",
                     callable=before_callable,
-                    result=score_callable(before_callable, active_ruleset),
+                    result=score_callable(before_callable, active_ruleset, before_semantics),
                 )
             )
-        files.append(ComplexityFile(file=symbol_file.file, callables=callables))
+        files.append(ComplexityFile(file=pair.file, callables=callables))
     ruleset_id = getattr(active_ruleset, "id", result.ruleset_id)
     return ComplexityDebugResult(comparison=result.comparison, ruleset_id=ruleset_id, files=files)
 
@@ -144,3 +153,17 @@ def _load_java_scorer():
             ) from exc
         raise
     return score_callable
+
+
+def _load_java_resolver():
+    try:
+        from diffcog.languages.java.resolver import resolve_semantics
+    except ModuleNotFoundError as exc:
+        if exc.name in {"tree_sitter", "tree_sitter_java"}:
+            raise DiffcogError(
+                "Java semantic analysis dependencies are missing. "
+                "Refresh the installed tool with: "
+                "uv tool install --force -e /Users/michael/Code/mlahr/diff-complexity"
+            ) from exc
+        raise
+    return resolve_semantics

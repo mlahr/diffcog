@@ -5,6 +5,7 @@ from pathlib import Path
 from diffcog.git import discover_changed_java_files, ensure_git_repo, load_source_pairs
 from diffcog.languages.java.complexity import DEFAULT_JAVA_RULESET, RuleSet, score_callable
 from diffcog.languages.java.parser import parse_snapshot
+from diffcog.languages.java.resolver import resolve_semantics
 from diffcog.languages.java.selection import changed_callables, classify_callables, unmapped_ranges
 from diffcog.models import (
     AnalysisResult,
@@ -50,14 +51,16 @@ def analyze(
 def _analyze_source_pair(source_pair: SourcePair, ruleset: RuleSet) -> FileComplexityDelta:
     before = parse_snapshot(source_pair.before)
     after = parse_snapshot(source_pair.after)
+    before_semantics = resolve_semantics(before.callables)
+    after_semantics = resolve_semantics(after.callables)
     before_callables = changed_callables(before.callables, source_pair.file.old_ranges)
     after_callables = changed_callables(after.callables, source_pair.file.new_ranges)
     modified, added, removed = classify_callables(before_callables, after_callables)
 
     callable_deltas = []
     for before_callable, after_callable in modified:
-        before_result = score_callable(before_callable, ruleset)
-        after_result = score_callable(after_callable, ruleset)
+        before_result = score_callable(before_callable, ruleset, before_semantics)
+        after_result = score_callable(after_callable, ruleset, after_semantics)
         callable_deltas.append(
             CallableComplexityDelta(
                 status="modified",
@@ -72,7 +75,7 @@ def _analyze_source_pair(source_pair: SourcePair, ruleset: RuleSet) -> FileCompl
         )
 
     for after_callable in added:
-        after_result = score_callable(after_callable, ruleset)
+        after_result = score_callable(after_callable, ruleset, after_semantics)
         callable_deltas.append(
             CallableComplexityDelta(
                 status="added",
@@ -87,7 +90,7 @@ def _analyze_source_pair(source_pair: SourcePair, ruleset: RuleSet) -> FileCompl
         )
 
     for before_callable in removed:
-        before_result = score_callable(before_callable, ruleset)
+        before_result = score_callable(before_callable, ruleset, before_semantics)
         callable_deltas.append(
             CallableComplexityDelta(
                 status="removed",

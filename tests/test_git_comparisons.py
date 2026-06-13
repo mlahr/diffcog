@@ -209,6 +209,17 @@ def test_show_complexity_report_for_changed_java_file(tmp_path: Path) -> None:
     assert "java.if line 1 +1" in output
 
 
+def test_show_complexity_report_includes_recursion(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void a() { a(); } }\n")
+
+    result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
+    output = format_complexity_text(build_complexity_debug(result))
+
+    assert "Foo#a/0 method complexity 1" in output
+    assert "java.recursion line 1 +1" in output
+
+
 def test_added_callable_contributes_new_complexity(tmp_path: Path) -> None:
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { void a() { if (x) { run(); } } }\n")

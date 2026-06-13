@@ -4,6 +4,7 @@ import pytest
 
 from diffcog.languages.java.complexity import get_ruleset, list_ruleset_ids, score_callable
 from diffcog.languages.java.parser import parse_snapshot
+from diffcog.languages.java.resolver import resolve_semantics
 
 
 def score_method(source: str) -> int:
@@ -16,6 +17,15 @@ def contribution_ids(source: str) -> list[str]:
     snapshot = parse_snapshot(source)
     assert len(snapshot.callables) == 1
     return [contribution.rule_id for contribution in score_callable(snapshot.callables[0]).contributions]
+
+
+def score_methods(source: str) -> dict[str, int]:
+    snapshot = parse_snapshot(source)
+    semantics = resolve_semantics(snapshot.callables)
+    return {
+        callable_.name: score_callable(callable_, semantic_context=semantics).score
+        for callable_ in snapshot.callables
+    }
 
 
 def test_empty_method_scores_zero() -> None:
@@ -92,6 +102,61 @@ def test_unlabeled_jump_does_not_score() -> None:
 
 def test_lambda_increases_nesting_without_scoring_itself() -> None:
     assert score_method("class Foo { void a() { Runnable r = () -> { if (x) run(); }; } }\n") == 2
+
+
+def test_direct_recursion_scores_one() -> None:
+    assert score_methods("class Foo { void a() { a(); } }\n") == {"a": 1}
+
+
+def test_this_qualified_recursion_scores_one() -> None:
+    assert score_methods("class Foo { void a() { this.a(); } }\n") == {"a": 1}
+
+
+def test_class_qualified_recursion_scores_one() -> None:
+    assert score_methods("class Foo { void a() { Foo.a(); } }\n") == {"a": 1}
+
+
+def test_super_qualified_call_counts_as_local_recursion() -> None:
+    assert score_methods("class Foo extends Base { void a() { super.a(); } }\n") == {"a": 1}
+
+
+def test_mutual_recursion_scores_each_method_once() -> None:
+    assert score_methods("class Foo { void a() { b(); } void b() { a(); } }\n") == {
+        "a": 1,
+        "b": 1,
+    }
+
+
+def test_non_recursive_helper_call_does_not_score_recursion() -> None:
+    assert score_methods("class Foo { void a() { b(); } void b() {} }\n") == {
+        "a": 0,
+        "b": 0,
+    }
+
+
+def test_variable_qualified_call_does_not_score_recursion() -> None:
+    assert score_methods("class Foo { void a() { other.a(); } }\n") == {"a": 0}
+
+
+def test_recursion_resolution_matches_arity() -> None:
+    snapshot = parse_snapshot("class Foo { void a() { a(1); } void a(int x) {} }\n")
+    semantics = resolve_semantics(snapshot.callables)
+
+    scores = [
+        score_callable(callable_, semantic_context=semantics).score
+        for callable_ in snapshot.callables
+    ]
+
+    assert scores == [0, 0]
+
+
+def test_control_flow_ruleset_includes_recursion() -> None:
+    snapshot = parse_snapshot("class Foo { void a() { a(); } }\n")
+    semantics = resolve_semantics(snapshot.callables)
+
+    assert score_callable(
+        snapshot.callables[0], get_ruleset("java.control-flow"), semantics
+    ).score == 1
 
 
 def test_control_flow_ruleset_excludes_boolean_chain() -> None:

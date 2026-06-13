@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 
 from tree_sitter import Node
 
 from diffcog.languages.java.models import JavaCallable
+
+CallableKey = tuple[tuple[str, ...], str, int, str]
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,11 @@ class ComplexityContribution:
 class ComplexityResult:
     score: int
     contributions: list[ComplexityContribution]
+
+
+@dataclass(frozen=True)
+class JavaSemanticContext:
+    recursive_call_lines: Mapping[CallableKey, int] = field(default_factory=dict)
 
 
 RuleScorer = Callable[[Node, ScoringContext], list[ComplexityContribution]]
@@ -71,13 +78,44 @@ def list_ruleset_ids() -> list[str]:
 
 
 def score_callable(
-    callable_: JavaCallable, ruleset: RuleSet | None = None
+    callable_: JavaCallable,
+    ruleset: RuleSet | None = None,
+    semantic_context: JavaSemanticContext | None = None,
 ) -> ComplexityResult:
     active_ruleset = ruleset or DEFAULT_JAVA_RULESET
-    contributions = _walk(callable_.node, ScoringContext(nesting=0), active_ruleset)
+    active_semantic_context = semantic_context or JavaSemanticContext()
+    contributions = [
+        *_recursion_contributions(callable_, active_semantic_context),
+        *_walk(callable_.node, ScoringContext(nesting=0), active_ruleset),
+    ]
     return ComplexityResult(
         score=sum(contribution.points for contribution in contributions),
         contributions=contributions,
+    )
+
+
+def _recursion_contributions(
+    callable_: JavaCallable, semantic_context: JavaSemanticContext
+) -> list[ComplexityContribution]:
+    line = semantic_context.recursive_call_lines.get(_callable_key(callable_))
+    if line is None:
+        return []
+    return [
+        ComplexityContribution(
+            rule_id="java.recursion",
+            line=line,
+            points=1,
+            message="recursive method call",
+        )
+    ]
+
+
+def _callable_key(callable_: JavaCallable) -> CallableKey:
+    return (
+        tuple(callable_.class_path),
+        callable_.name,
+        callable_.parameter_count,
+        callable_.kind,
     )
 
 
