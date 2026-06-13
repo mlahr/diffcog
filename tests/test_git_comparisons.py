@@ -6,6 +6,7 @@ from pathlib import Path
 
 from diffcog.analysis import analyze
 from diffcog.cli import resolve_comparison
+from diffcog.debug_analysis import build_complexity_debug, build_symbol_debug
 from diffcog.report import format_json
 from diffcog.report import format_text
 from diffcog.report import format_complexity_text
@@ -162,7 +163,7 @@ def test_show_symbols_report_for_modified_java_file(tmp_path: Path) -> None:
     write(tmp_path, "src/Foo.java", "class Foo { void a() {} }\n")
 
     result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
-    output = format_symbol_text(result)
+    output = format_symbol_text(build_symbol_debug(result))
 
     assert "Symbol dump" in output
     assert "Foo#a/0 method lines 1-1" in output
@@ -174,7 +175,7 @@ def test_show_symbols_report_for_added_java_file(tmp_path: Path) -> None:
     git(tmp_path, "add", "src/New.java")
 
     result = analyze(resolve_comparison([], staged=True, unstaged=False), tmp_path)
-    output = format_symbol_text(result)
+    output = format_symbol_text(build_symbol_debug(result))
 
     assert "A src/New.java" in output
     assert "  added:" in output
@@ -189,7 +190,7 @@ def test_show_symbols_report_for_deleted_java_file(tmp_path: Path) -> None:
     (tmp_path / "src/Foo.java").unlink()
 
     result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
-    output = format_symbol_text(result)
+    output = format_symbol_text(build_symbol_debug(result))
 
     assert "D src/Foo.java" in output
     assert "  removed:" in output
@@ -201,7 +202,7 @@ def test_show_complexity_report_for_changed_java_file(tmp_path: Path) -> None:
     write(tmp_path, "src/Foo.java", "class Foo { void a() { if (x) { run(); } } }\n")
 
     result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
-    output = format_complexity_text(result)
+    output = format_complexity_text(build_complexity_debug(result))
 
     assert "Complexity dump" in output
     assert "Foo#a/0 method complexity 1" in output

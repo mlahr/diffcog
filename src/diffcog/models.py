@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from diffcog.languages.java.complexity import ComplexityResult
+    from diffcog.languages.java.models import JavaCallable
 
 
 class EndpointKind(str, Enum):
@@ -49,10 +53,10 @@ class SourcePair:
 @dataclass(frozen=True)
 class CallableComplexityDelta:
     status: str
-    before_callable: Any | None
-    after_callable: Any | None
-    before_result: Any | None
-    after_result: Any | None
+    before_callable: JavaCallable | None
+    after_callable: JavaCallable | None
+    before_result: ComplexityResult | None
+    after_result: ComplexityResult | None
     before_score: int
     after_score: int
     delta: int

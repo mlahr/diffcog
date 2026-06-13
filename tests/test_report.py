@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from diffcog.debug_analysis import build_complexity_debug, build_symbol_debug
 from diffcog.errors import DiffcogError
 from diffcog.languages.java.complexity import score_callable
 from diffcog.languages.java.parser import parse_snapshot
@@ -220,7 +221,7 @@ def test_symbol_text_report_modified_callable() -> None:
         ],
     )
 
-    output = format_symbol_text(result)
+    output = format_symbol_text(build_symbol_debug(result))
 
     assert "Comparing HEAD -> working tree" in output
     assert "Symbol dump" in output
@@ -245,7 +246,7 @@ def test_symbol_text_report_added_callable() -> None:
         ],
     )
 
-    output = format_symbol_text(result)
+    output = format_symbol_text(build_symbol_debug(result))
 
     assert "  added:" in output
     assert "Foo#b/1 method lines 3-3" in output
@@ -259,7 +260,7 @@ def test_symbol_text_report_missing_side() -> None:
         source_pairs=[SourcePair(file=file, before=None, after="class New { void run() {} }\n")],
     )
 
-    output = format_symbol_text(result)
+    output = format_symbol_text(build_symbol_debug(result))
 
     assert "A src/New.java" in output
     assert "  added:" in output
@@ -274,7 +275,7 @@ def test_symbol_text_report_no_callables() -> None:
         source_pairs=[SourcePair(file=file, before="class Foo {}\n", after="class Foo {}\n")],
     )
 
-    output = format_symbol_text(result)
+    output = format_symbol_text(build_symbol_debug(result))
 
     assert "no changed methods/constructors" in output
 
@@ -293,7 +294,7 @@ def test_symbol_text_report_outside_symbols() -> None:
         ],
     )
 
-    output = format_symbol_text(result)
+    output = format_symbol_text(build_symbol_debug(result))
 
     assert "changed lines not mapped to methods/constructors:" in output
     assert "before line 1" in output
@@ -314,7 +315,7 @@ def test_symbol_json_report_shape() -> None:
         ],
     )
 
-    payload = json.loads(format_symbol_json(result))
+    payload = json.loads(format_symbol_json(build_symbol_debug(result)))
 
     assert payload["debug"] == "show-symbols"
     assert payload["files"][0]["before"]["present"] is True
@@ -339,7 +340,7 @@ def test_symbol_json_report_parse_error() -> None:
         source_pairs=[SourcePair(file=file, before="class Foo {\n", after="class Foo {}\n")],
     )
 
-    payload = json.loads(format_symbol_json(result))
+    payload = json.loads(format_symbol_json(build_symbol_debug(result)))
 
     assert payload["files"][0]["before"]["parse_error"] is True
 
@@ -349,7 +350,7 @@ def test_symbol_report_missing_parser_dependency_has_clear_error() -> None:
 
     with patch("builtins.__import__", side_effect=ModuleNotFoundError(name="tree_sitter_java")):
         with pytest.raises(DiffcogError, match="Java symbol parsing dependencies are missing"):
-            format_symbol_text(result)
+            build_symbol_debug(result)
 
 
 def test_complexity_text_report() -> None:
@@ -366,7 +367,7 @@ def test_complexity_text_report() -> None:
         ],
     )
 
-    output = format_complexity_text(result)
+    output = format_complexity_text(build_complexity_debug(result))
 
     assert "Complexity dump" in output
     assert "  added:" in output
@@ -388,7 +389,7 @@ def test_complexity_json_report_shape() -> None:
         ],
     )
 
-    payload = json.loads(format_complexity_json(result))
+    payload = json.loads(format_complexity_json(build_complexity_debug(result)))
 
     assert payload["debug"] == "show-complexity"
     assert payload["files"][0]["callables"][0]["status"] == "added"

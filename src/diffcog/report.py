@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from diffcog.errors import DiffcogError
-from diffcog.languages.java.selection import changed_callables, classify_callables, unmapped_ranges
+from diffcog.debug_analysis import ComplexityDebugResult, SymbolDebugResult
 from diffcog.models import AnalysisResult, CallableComplexityDelta, LineRange, Thresholds
 
 if TYPE_CHECKING:
-    from diffcog.languages.java.models import JavaCallable, ParsedSnapshot
+    from diffcog.languages.java.models import JavaCallable
 
 
 def format_text(result: AnalysisResult, thresholds: Thresholds, details: bool = False) -> str:
@@ -108,42 +107,31 @@ def format_snapshot_json(result: AnalysisResult) -> str:
     return json.dumps(payload, indent=2, sort_keys=False) + "\n"
 
 
-def format_symbol_text(result: AnalysisResult) -> str:
-    parse_snapshot = _load_java_parser()
-
+def format_symbol_text(result: SymbolDebugResult) -> str:
     lines = [
         f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
         "",
         "Symbol dump",
     ]
 
-    if not result.source_pairs:
+    if not result.files:
         lines.extend(["", "No Java changes found."])
         return "\n".join(lines) + "\n"
 
-    for pair in result.source_pairs:
-        before = parse_snapshot(pair.before)
-        after = parse_snapshot(pair.after)
-        before_callables = changed_callables(before.callables, pair.file.old_ranges)
-        after_callables = changed_callables(after.callables, pair.file.new_ranges)
-        before_outside = unmapped_ranges(pair.file.old_ranges, before.callables)
-        after_outside = unmapped_ranges(pair.file.new_ranges, after.callables)
-        modified, added, removed = classify_callables(before_callables, after_callables)
+    for file in result.files:
         lines.extend(
             [
                 "",
-                _format_changed_file(pair.file.status, pair.file.old_path, pair.file.path),
-                *_format_symbol_groups(modified, added, removed, before, after),
-                *_format_unmapped_lines(before_outside, after_outside),
+                _format_changed_file(file.file.status, file.file.old_path, file.file.path),
+                *_format_symbol_groups(file),
+                *_format_unmapped_lines(file.unmapped_before_ranges, file.unmapped_after_ranges),
             ]
         )
 
     return "\n".join(lines) + "\n"
 
 
-def format_symbol_json(result: AnalysisResult) -> str:
-    parse_snapshot = _load_java_parser()
-
+def format_symbol_json(result: SymbolDebugResult) -> str:
     payload: dict[str, Any] = {
         "comparison": {
             "mode": result.comparison.mode,
@@ -153,57 +141,52 @@ def format_symbol_json(result: AnalysisResult) -> str:
         "debug": "show-symbols",
         "files": [
             {
-                "status": pair.file.status,
-                "path": pair.file.path,
-                "old_path": pair.file.old_path,
-                "before": _touched_parsed_snapshot_payload(
-                    parse_snapshot(pair.before), pair.file.old_ranges
+                "status": file.file.status,
+                "path": file.file.path,
+                "old_path": file.file.old_path,
+                "before": _symbol_side_payload(
+                    present=file.before_present,
+                    parse_error=file.before_parse_error,
+                    callables=[before for before, _ in file.modified] + file.removed,
+                    outside_ranges=file.unmapped_before_ranges,
                 ),
-                "after": _touched_parsed_snapshot_payload(
-                    parse_snapshot(pair.after), pair.file.new_ranges
+                "after": _symbol_side_payload(
+                    present=file.after_present,
+                    parse_error=file.after_parse_error,
+                    callables=[after for _, after in file.modified] + file.added,
+                    outside_ranges=file.unmapped_after_ranges,
                 ),
             }
-            for pair in result.source_pairs
+            for file in result.files
         ],
     }
     return json.dumps(payload, indent=2, sort_keys=False) + "\n"
 
 
-def format_complexity_text(result: AnalysisResult) -> str:
-    parse_snapshot = _load_java_parser()
-    score_callable = _load_java_scorer()
-
+def format_complexity_text(result: ComplexityDebugResult) -> str:
     lines = [
         f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
         "",
         "Complexity dump",
     ]
 
-    if not result.source_pairs:
+    if not result.files:
         lines.extend(["", "No Java changes found."])
         return "\n".join(lines) + "\n"
 
-    for pair in result.source_pairs:
-        before = parse_snapshot(pair.before)
-        after = parse_snapshot(pair.after)
-        before_callables = changed_callables(before.callables, pair.file.old_ranges)
-        after_callables = changed_callables(after.callables, pair.file.new_ranges)
-        modified, added, removed = classify_callables(before_callables, after_callables)
+    for file in result.files:
         lines.extend(
             [
                 "",
-                _format_changed_file(pair.file.status, pair.file.old_path, pair.file.path),
-                *_format_complexity_groups(modified, added, removed, score_callable),
+                _format_changed_file(file.file.status, file.file.old_path, file.file.path),
+                *_format_complexity_groups(file.callables),
             ]
         )
 
     return "\n".join(lines) + "\n"
 
 
-def format_complexity_json(result: AnalysisResult) -> str:
-    parse_snapshot = _load_java_parser()
-    score_callable = _load_java_scorer()
-
+def format_complexity_json(result: ComplexityDebugResult) -> str:
     payload: dict[str, Any] = {
         "comparison": {
             "mode": result.comparison.mode,
@@ -213,21 +196,15 @@ def format_complexity_json(result: AnalysisResult) -> str:
         "debug": "show-complexity",
         "files": [],
     }
-    for pair in result.source_pairs:
-        before = parse_snapshot(pair.before)
-        after = parse_snapshot(pair.after)
-        before_callables = changed_callables(before.callables, pair.file.old_ranges)
-        after_callables = changed_callables(after.callables, pair.file.new_ranges)
-        modified, added, removed = classify_callables(before_callables, after_callables)
+    for file in result.files:
         payload["files"].append(
             {
-                "status": pair.file.status,
-                "path": pair.file.path,
-                "old_path": pair.file.old_path,
+                "status": file.file.status,
+                "path": file.file.path,
+                "old_path": file.file.old_path,
                 "callables": [
-                    *_complexity_payloads("modified", [after for _, after in modified], score_callable),
-                    *_complexity_payloads("added", added, score_callable),
-                    *_complexity_payloads("removed", removed, score_callable),
+                    _complexity_payload(callable_)
+                    for callable_ in file.callables
                 ],
             }
         )
@@ -373,22 +350,16 @@ def _snapshot_stats(source: str | None) -> dict[str, bool | int]:
     }
 
 
-def _format_symbol_groups(
-    modified: list[tuple[JavaCallable, JavaCallable]],
-    added: list[JavaCallable],
-    removed: list[JavaCallable],
-    before: ParsedSnapshot,
-    after: ParsedSnapshot,
-) -> list[str]:
+def _format_symbol_groups(file: Any) -> list[str]:
     lines = []
-    if before.present and before.parse_error:
+    if file.before_parse_error:
         lines.append("  before parse error")
-    if after.present and after.parse_error:
+    if file.after_parse_error:
         lines.append("  after parse error")
 
-    if modified:
+    if file.modified:
         lines.append("  modified:")
-        for before_callable, after_callable in modified:
+        for before_callable, after_callable in file.modified:
             lines.extend(
                 [
                     f"    {_format_callable_signature(after_callable)} {after_callable.kind}",
@@ -397,13 +368,13 @@ def _format_symbol_groups(
                 ]
             )
 
-    if added:
+    if file.added:
         lines.append("  added:")
-        lines.extend(f"    {_format_callable(callable_)}" for callable_ in added)
+        lines.extend(f"    {_format_callable(callable_)}" for callable_ in file.added)
 
-    if removed:
+    if file.removed:
         lines.append("  removed:")
-        lines.extend(f"    {_format_callable(callable_)}" for callable_ in removed)
+        lines.extend(f"    {_format_callable(callable_)}" for callable_ in file.removed)
 
     if not lines:
         lines.append("  no changed methods/constructors")
@@ -424,59 +395,46 @@ def _format_unmapped_lines(
     return lines
 
 
-def _format_complexity_groups(
-    modified: list[tuple[JavaCallable, JavaCallable]],
-    added: list[JavaCallable],
-    removed: list[JavaCallable],
-    score_callable: Any,
-) -> list[str]:
+def _format_complexity_groups(callables: list[Any]) -> list[str]:
     lines = []
-    if modified:
-        lines.append("  modified:")
-        for _, after_callable in modified:
-            lines.extend(_format_complexity_callable(after_callable, score_callable))
-    if added:
-        lines.append("  added:")
-        for callable_ in added:
-            lines.extend(_format_complexity_callable(callable_, score_callable))
-    if removed:
-        lines.append("  removed:")
-        for callable_ in removed:
-            lines.extend(_format_complexity_callable(callable_, score_callable))
+    for label in ("modified", "added", "removed"):
+        group = [callable_ for callable_ in callables if callable_.status == label]
+        if group:
+            lines.append(f"  {label}:")
+            for callable_ in group:
+                lines.extend(_format_complexity_callable(callable_))
     if not lines:
         lines.append("  no changed methods/constructors")
     return lines
 
 
-def _format_complexity_callable(callable_: JavaCallable, score_callable: Any) -> list[str]:
-    result = score_callable(callable_)
-    lines = [f"    {_format_callable_signature(callable_)} {callable_.kind} complexity {result.score}"]
+def _format_complexity_callable(callable_: Any) -> list[str]:
+    lines = [
+        f"    {_format_callable_signature(callable_.callable)} "
+        f"{callable_.callable.kind} complexity {callable_.result.score}"
+    ]
     lines.extend(
         f"      {contribution.rule_id} line {contribution.line} +{contribution.points}"
-        for contribution in result.contributions
+        for contribution in callable_.result.contributions
     )
     return lines
 
 
-def _complexity_payloads(status: str, callables: list[JavaCallable], score_callable: Any) -> list[dict[str, Any]]:
-    return [
-        {
-            "status": status,
-            **_callable_payload(callable_),
-            "score": result.score,
-            "contributions": [
-                {
-                    "rule_id": contribution.rule_id,
-                    "line": contribution.line,
-                    "points": contribution.points,
-                    "message": contribution.message,
-                }
-                for contribution in result.contributions
-            ],
-        }
-        for callable_ in callables
-        for result in [score_callable(callable_)]
-    ]
+def _complexity_payload(callable_: Any) -> dict[str, Any]:
+    return {
+        "status": callable_.status,
+        **_callable_payload(callable_.callable),
+        "score": callable_.result.score,
+        "contributions": [
+            {
+                "rule_id": contribution.rule_id,
+                "line": contribution.line,
+                "points": contribution.points,
+                "message": contribution.message,
+            }
+            for contribution in callable_.result.contributions
+        ],
+    }
 
 
 def _format_callable_signature(callable_: JavaCallable) -> str:
@@ -493,19 +451,16 @@ def _format_callable(callable_: JavaCallable) -> str:
     )
 
 
-def _touched_parsed_snapshot_payload(
-    snapshot: ParsedSnapshot, changed_ranges: list[LineRange]
+def _symbol_side_payload(
+    *, present: bool, parse_error: bool, callables: list[JavaCallable], outside_ranges: list[LineRange]
 ) -> dict[str, Any]:
     return {
-        "present": snapshot.present,
-        "parse_error": snapshot.parse_error,
-        "callables": [
-            _callable_payload(callable_)
-            for callable_ in changed_callables(snapshot.callables, changed_ranges)
-        ],
+        "present": present,
+        "parse_error": parse_error,
+        "callables": [_callable_payload(callable_) for callable_ in callables],
         "outside_ranges": [
             {"start": range_.start, "end": range_.end}
-            for range_ in unmapped_ranges(changed_ranges, snapshot.callables)
+            for range_ in outside_ranges
         ],
     }
 
@@ -526,31 +481,3 @@ def _format_ranges(ranges: list[LineRange]) -> str:
         f"line {range_.start}" if range_.start == range_.end else f"lines {range_.start}-{range_.end}"
         for range_ in ranges
     )
-
-
-def _load_java_parser() -> Any:
-    try:
-        from diffcog.languages.java.parser import parse_snapshot
-    except ModuleNotFoundError as exc:
-        if exc.name in {"tree_sitter", "tree_sitter_java"}:
-            raise DiffcogError(
-                "Java symbol parsing dependencies are missing. "
-                "Refresh the installed tool with: "
-                "uv tool install --force -e /Users/michael/Code/mlahr/diff-complexity"
-            ) from exc
-        raise
-    return parse_snapshot
-
-
-def _load_java_scorer() -> Any:
-    try:
-        from diffcog.languages.java.complexity import score_callable
-    except ModuleNotFoundError as exc:
-        if exc.name in {"tree_sitter", "tree_sitter_java"}:
-            raise DiffcogError(
-                "Java complexity dependencies are missing. "
-                "Refresh the installed tool with: "
-                "uv tool install --force -e /Users/michael/Code/mlahr/diff-complexity"
-            ) from exc
-        raise
-    return score_callable

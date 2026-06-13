@@ -2,8 +2,8 @@
 
 Prototype CLI for measuring cognitive complexity introduced by Java code changes.
 
-The current implementation has the CLI and git comparison plumbing in place. The
-complexity analyzer is still a placeholder and reports zero scores.
+The current implementation analyzes tracked Java changes, maps changed lines to
+methods/constructors, and reports custom cognitive complexity deltas.
 
 ## Install
 
@@ -100,7 +100,7 @@ Exit codes:
 - Tracks `.java` files only.
 - Uses git refs, index, and working tree states as inputs.
 - Excludes untracked files for now.
-- Reports placeholder complexity totals until the analyzer is implemented.
+- Reports custom complexity totals for changed Java methods/constructors.
 
 See [CLI.md](CLI.md) for the CLI contract and [BRAINSTORMING.md](BRAINSTORMING.md)
 for design notes.

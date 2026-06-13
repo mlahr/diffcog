@@ -4,6 +4,7 @@ import argparse
 import sys
 
 from diffcog.analysis import analyze
+from diffcog.debug_analysis import build_complexity_debug, build_symbol_debug
 from diffcog.errors import DiffcogError
 from diffcog.git import GitError
 from diffcog.models import Comparison, Endpoint, EndpointKind, Thresholds
@@ -78,15 +79,17 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(format_snapshot_text(result), end="")
         elif args.debug == "show-symbols":
+            symbol_debug = build_symbol_debug(result)
             if args.json:
-                print(format_symbol_json(result), end="")
+                print(format_symbol_json(symbol_debug), end="")
             else:
-                print(format_symbol_text(result), end="")
+                print(format_symbol_text(symbol_debug), end="")
         elif args.debug == "show-complexity":
+            complexity_debug = build_complexity_debug(result)
             if args.json:
-                print(format_complexity_json(result), end="")
+                print(format_complexity_json(complexity_debug), end="")
             else:
-                print(format_complexity_text(result), end="")
+                print(format_complexity_text(complexity_debug), end="")
         elif args.json:
             print(format_json(result, thresholds), end="")
         else:
