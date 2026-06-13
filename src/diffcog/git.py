@@ -4,7 +4,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from diffcog.models import ChangedFile, Comparison, Endpoint, EndpointKind, LineRange, SourcePair
+from diffcog.models import ChangedFile, Comparison, Endpoint, EndpointKind, LineRange, PathFilter, SourcePair
 
 
 HUNK_RE = re.compile(
@@ -36,15 +36,20 @@ def ensure_git_repo(cwd: Path | None = None) -> None:
     run_git(["rev-parse", "--show-toplevel"], cwd=cwd)
 
 
-def discover_changed_java_files(comparison: Comparison, cwd: Path | None = None) -> list[ChangedFile]:
-    status_output = run_git(_diff_name_status_args(comparison), cwd=cwd)
-    range_output = run_git(_diff_ranges_args(comparison), cwd=cwd)
+def discover_changed_java_files(
+    comparison: Comparison, cwd: Path | None = None, path_filter: PathFilter | None = None
+) -> list[ChangedFile]:
+    active_filter = path_filter or PathFilter()
+    status_output = run_git(_diff_name_status_args(comparison, active_filter), cwd=cwd)
+    range_output = run_git(_diff_ranges_args(comparison, active_filter), cwd=cwd)
     ranges_by_path = _parse_diff_ranges(range_output)
     files = []
     for line in status_output.splitlines():
         if not line.strip():
             continue
         file = _parse_name_status_line(line)
+        if not _is_java_path(file.path):
+            continue
         ranges = ranges_by_path.get(file.path, ([], []))
         files.append(
             ChangedFile(
@@ -71,15 +76,16 @@ def load_source_pairs(
     ]
 
 
-def _diff_name_status_args(comparison: Comparison) -> list[str]:
+def _diff_name_status_args(comparison: Comparison, path_filter: PathFilter | None = None) -> list[str]:
     before = comparison.before
     after = comparison.after
+    pathspecs = _java_pathspecs(path_filter or PathFilter())
 
     if before.kind == EndpointKind.REF and after.kind == EndpointKind.REF:
-        return ["diff", "--name-status", "--find-renames", before.label, after.label, "--", "*.java"]
+        return ["diff", "--name-status", "--find-renames", before.label, after.label, "--", *pathspecs]
 
     if before.kind == EndpointKind.REF and after.kind == EndpointKind.WORKTREE:
-        return ["diff", "--name-status", "--find-renames", before.label, "--", "*.java"]
+        return ["diff", "--name-status", "--find-renames", before.label, "--", *pathspecs]
 
     if before.kind == EndpointKind.REF and after.kind == EndpointKind.INDEX:
         return [
@@ -89,21 +95,31 @@ def _diff_name_status_args(comparison: Comparison) -> list[str]:
             "--find-renames",
             before.label,
             "--",
-            "*.java",
+            *pathspecs,
         ]
 
     if before.kind == EndpointKind.INDEX and after.kind == EndpointKind.WORKTREE:
-        return ["diff", "--name-status", "--find-renames", "--", "*.java"]
+        return ["diff", "--name-status", "--find-renames", "--", *pathspecs]
 
     raise GitError(f"unsupported comparison: {before.label} -> {after.label}")
 
 
-def _diff_ranges_args(comparison: Comparison) -> list[str]:
-    args = _diff_name_status_args(comparison)
+def _diff_ranges_args(comparison: Comparison, path_filter: PathFilter | None = None) -> list[str]:
+    args = _diff_name_status_args(comparison, path_filter)
     range_args = [arg for arg in args if arg != "--name-status"]
     pathspec_index = range_args.index("--")
     range_args.insert(pathspec_index, "--unified=0")
     return range_args
+
+
+def _java_pathspecs(path_filter: PathFilter) -> list[str]:
+    includes = list(path_filter.includes) or ["*.java"]
+    excludes = [f":(exclude){pathspec}" for pathspec in path_filter.excludes]
+    return [*includes, *excludes]
+
+
+def _is_java_path(path: str) -> bool:
+    return path.endswith(".java")
 
 
 def _parse_name_status_line(line: str) -> ChangedFile:

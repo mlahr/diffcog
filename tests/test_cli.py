@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from diffcog.cli import EXIT_ERROR, EXIT_OK, EXIT_THRESHOLD, build_parser, main, resolve_comparison
-from diffcog.models import AnalysisResult, Comparison, Endpoint, EndpointKind
+from diffcog.models import AnalysisResult, Comparison, Endpoint, EndpointKind, PathFilter
 
 
 def test_default_resolves_head_to_worktree() -> None:
@@ -79,6 +79,59 @@ def test_hotspots_parses() -> None:
     args = parser.parse_args(["--hotspots"])
 
     assert args.hotspots is True
+
+
+def test_include_and_exclude_parse_as_repeatable_pathspecs() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "--include",
+            "src/main",
+            "--include",
+            "src/test",
+            "--exclude",
+            "**/generated/**",
+            "--exclude",
+            "legacy",
+        ]
+    )
+
+    assert args.include == ["src/main", "src/test"]
+    assert args.exclude == ["**/generated/**", "legacy"]
+
+
+def test_main_passes_path_filter_when_include_or_exclude_is_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    comparison = Comparison(
+        mode="ref_to_worktree",
+        before=Endpoint(EndpointKind.REF, "HEAD"),
+        after=Endpoint(EndpointKind.WORKTREE, "working tree"),
+    )
+    result = AnalysisResult(
+        comparison=comparison,
+        files=[],
+        source_pairs=[],
+        new_complexity=0,
+        removed_complexity=0,
+        net_delta=0,
+    )
+    captured_filter = None
+
+    def fake_analysis(
+        _comparison: Comparison, *, ruleset: object, path_filter: PathFilter | None = None
+    ) -> AnalysisResult:
+        nonlocal captured_filter
+        captured_filter = path_filter
+        return result
+
+    monkeypatch.setattr("diffcog.cli.analyze", fake_analysis)
+
+    assert main(["--include", "src/main", "--exclude", "**/generated/**"]) == EXIT_OK
+    assert captured_filter == PathFilter(
+        includes=("src/main",), excludes=("**/generated/**",)
+    )
 
 
 def test_details_and_hotspots_are_mutually_exclusive() -> None:

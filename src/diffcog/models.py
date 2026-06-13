@@ -29,6 +29,12 @@ class Comparison:
 
 
 @dataclass(frozen=True)
+class PathFilter:
+    includes: tuple[str, ...] = ()
+    excludes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class ChangedFile:
     status: str
     path: str

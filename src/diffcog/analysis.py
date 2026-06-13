@@ -12,16 +12,20 @@ from diffcog.models import (
     CallableComplexityDelta,
     Comparison,
     FileComplexityDelta,
+    PathFilter,
     SourcePair,
 )
 
 
 def analyze(
-    comparison: Comparison, cwd: Path | None = None, ruleset: RuleSet | None = None
+    comparison: Comparison,
+    cwd: Path | None = None,
+    ruleset: RuleSet | None = None,
+    path_filter: PathFilter | None = None,
 ) -> AnalysisResult:
     active_ruleset = ruleset or DEFAULT_JAVA_RULESET
     ensure_git_repo(cwd)
-    files = discover_changed_java_files(comparison, cwd)
+    files = discover_changed_java_files(comparison, cwd, path_filter)
     source_pairs = load_source_pairs(comparison, files, cwd)
     file_deltas = [
         _analyze_source_pair(source_pair, active_ruleset) for source_pair in source_pairs

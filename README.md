@@ -68,6 +68,14 @@ Print JSON:
 diffcog --json
 ```
 
+Limit analysis to matching paths:
+
+```bash
+diffcog --include 'src/main'
+diffcog --exclude '**/generated/**'
+diffcog --include 'src' --exclude '**/generated/**'
+```
+
 Select a built-in Java rule set:
 
 ```bash
@@ -111,6 +119,7 @@ Exit codes:
 ## Current Scope
 
 - Tracks `.java` files only.
+- Supports repeatable git pathspec filters with `--include` and `--exclude`.
 - Uses git refs, index, and working tree states as inputs.
 - Excludes untracked files for now.
 - Reports custom complexity totals for changed Java methods/constructors.

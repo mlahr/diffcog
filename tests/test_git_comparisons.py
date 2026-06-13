@@ -11,7 +11,7 @@ from diffcog.report import format_json
 from diffcog.report import format_text
 from diffcog.report import format_complexity_text
 from diffcog.report import format_symbol_text
-from diffcog.models import Thresholds
+from diffcog.models import PathFilter, Thresholds
 
 
 def git(repo: Path, *args: str) -> str:
@@ -119,6 +119,67 @@ def test_untracked_java_files_are_excluded(tmp_path: Path) -> None:
     result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
 
     assert result.files == []
+
+
+def test_include_pathspec_selects_matching_java_changes(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/main/Foo.java", "class Foo { void a() {} }\n")
+    write(tmp_path, "src/test/FooTest.java", "class FooTest { void a() {} }\n")
+    git(tmp_path, "add", ".")
+
+    result = analyze(
+        resolve_comparison([], staged=True, unstaged=False),
+        tmp_path,
+        path_filter=PathFilter(includes=("src/main",)),
+    )
+
+    assert [file.path for file in result.files] == ["src/main/Foo.java"]
+
+
+def test_exclude_pathspec_removes_matching_java_changes(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/main/Foo.java", "class Foo { void a() {} }\n")
+    write(tmp_path, "src/generated/Generated.java", "class Generated { void a() {} }\n")
+    git(tmp_path, "add", ".")
+
+    result = analyze(
+        resolve_comparison([], staged=True, unstaged=False),
+        tmp_path,
+        path_filter=PathFilter(excludes=("src/generated",)),
+    )
+
+    assert [file.path for file in result.files] == ["src/main/Foo.java"]
+
+
+def test_include_and_exclude_pathspecs_can_be_combined(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/main/Foo.java", "class Foo { void a() {} }\n")
+    write(tmp_path, "src/main/generated/Generated.java", "class Generated { void a() {} }\n")
+    write(tmp_path, "src/test/FooTest.java", "class FooTest { void a() {} }\n")
+    git(tmp_path, "add", ".")
+
+    result = analyze(
+        resolve_comparison([], staged=True, unstaged=False),
+        tmp_path,
+        path_filter=PathFilter(includes=("src/main",), excludes=("src/main/generated",)),
+    )
+
+    assert [file.path for file in result.files] == ["src/main/Foo.java"]
+
+
+def test_include_pathspec_does_not_widen_analysis_beyond_java(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/main/Foo.java", "class Foo { void a() {} }\n")
+    write(tmp_path, "src/main/notes.txt", "changed\n")
+    git(tmp_path, "add", ".")
+
+    result = analyze(
+        resolve_comparison([], staged=True, unstaged=False),
+        tmp_path,
+        path_filter=PathFilter(includes=("src/main",)),
+    )
+
+    assert [file.path for file in result.files] == ["src/main/Foo.java"]
 
 
 def test_two_explicit_refs_ignore_dirty_worktree(tmp_path: Path) -> None:

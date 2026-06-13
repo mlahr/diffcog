@@ -8,7 +8,7 @@ from diffcog.debug_analysis import build_complexity_debug, build_symbol_debug
 from diffcog.errors import DiffcogError
 from diffcog.git import GitError
 from diffcog.languages.java.complexity import DEFAULT_JAVA_RULESET, get_ruleset, list_ruleset_ids
-from diffcog.models import Comparison, Endpoint, EndpointKind, Thresholds
+from diffcog.models import Comparison, Endpoint, EndpointKind, PathFilter, Thresholds
 from diffcog.report import (
     format_json,
     format_complexity_json,
@@ -50,6 +50,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--max-new", type=_non_negative_int, default=None)
     parser.add_argument("--max-delta", type=_non_negative_int, default=None)
+    parser.add_argument(
+        "--include",
+        action="append",
+        default=[],
+        metavar="PATHSPEC",
+        help="include changed files matching a git pathspec",
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="PATHSPEC",
+        help="exclude changed files matching a git pathspec",
+    )
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
     report_group = parser.add_mutually_exclusive_group()
     report_group.add_argument(
@@ -89,7 +103,11 @@ def main(argv: list[str] | None = None) -> int:
         ruleset = get_ruleset(args.ruleset)
         comparison = resolve_comparison(args.refs, staged=args.staged, unstaged=args.unstaged)
         thresholds = Thresholds(max_new=args.max_new, max_delta=args.max_delta)
-        result = analyze(comparison, ruleset=ruleset)
+        path_filter = PathFilter(includes=tuple(args.include), excludes=tuple(args.exclude))
+        if path_filter.includes or path_filter.excludes:
+            result = analyze(comparison, ruleset=ruleset, path_filter=path_filter)
+        else:
+            result = analyze(comparison, ruleset=ruleset)
     except (ValueError, GitError, DiffcogError) as exc:
         print(f"diffcog: error: {exc}", file=sys.stderr)
         return EXIT_ERROR

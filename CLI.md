@@ -77,6 +77,15 @@ List available rule sets:
 diffcog --list-rulesets
 ```
 
+Limit analysis to matching paths:
+
+```bash
+diffcog --include 'src/main'
+diffcog --include 'src/**/*.java'
+diffcog --exclude '**/generated/**'
+diffcog --include 'src' --exclude '**/generated/**'
+```
+
 ## Semantics
 
 The command:
@@ -193,6 +202,27 @@ Unknown rule set names are usage errors.
 
 `--list-rulesets` prints available rule set IDs and exits without reading git state.
 
+## Path Filters
+
+`--include` and `--exclude` use git pathspec syntax.
+
+Both options may be repeated:
+
+```bash
+diffcog --include 'src/main' --include 'src/test'
+diffcog --exclude '**/generated/**' --exclude 'legacy'
+```
+
+When no include is provided, all changed tracked Java files are candidates.
+
+When one or more includes are provided, only changed files matching those
+pathspecs are candidates.
+
+Excludes are applied after includes.
+
+Path filters do not expand language scope. Even if an include pathspec matches
+non-Java files, only tracked `.java` files are analyzed.
+
 ## Why Not Raw Diff As The Main Input?
 
 A raw unified diff identifies changed files and changed line ranges, but it does not provide enough context to compute method-level cognitive complexity reliably.
@@ -234,6 +264,8 @@ diffcog BASE
 diffcog
 diffcog --staged
 diffcog --unstaged
+diffcog --include PATHSPEC
+diffcog --exclude PATHSPEC
 ```
 
 Only Java files are analyzed initially.
@@ -379,8 +411,6 @@ Potential options after the first prototype:
 
 ```bash
 diffcog --lang java
-diffcog --include 'src/**/*.java'
-diffcog --exclude '**/generated/**'
 diffcog --diff patch.diff
 diffcog --diff -
 ```
