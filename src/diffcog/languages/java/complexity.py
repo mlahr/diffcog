@@ -54,6 +54,7 @@ CONTROL_FLOW_NODE_TYPES = {
     "switch_expression",
     "switch_statement",
     "ternary_expression",
+    "lambda_expression",
 }
 
 
@@ -81,6 +82,9 @@ def score_callable(
 
 
 def _walk(node: Node, context: ScoringContext, ruleset: RuleSet) -> list[ComplexityContribution]:
+    if node.type == "if_statement":
+        return _walk_if_statement(node, context, ruleset)
+
     contributions: list[ComplexityContribution] = []
     for rule in ruleset.rules:
         if node.type in rule.node_types:
@@ -96,8 +100,37 @@ def _walk(node: Node, context: ScoringContext, ruleset: RuleSet) -> list[Complex
     return contributions
 
 
+def _walk_if_statement(
+    node: Node, context: ScoringContext, ruleset: RuleSet
+) -> list[ComplexityContribution]:
+    contributions: list[ComplexityContribution] = []
+    for rule in ruleset.rules:
+        if node.type in rule.node_types:
+            contributions.extend(rule.score(node, context))
+
+    condition = node.child_by_field_name("condition")
+    if condition is not None:
+        contributions.extend(_walk(condition, context, ruleset))
+
+    consequence = node.child_by_field_name("consequence")
+    consequence_context = context
+    if not _is_else_if(node):
+        consequence_context = ScoringContext(nesting=context.nesting + 1)
+    if consequence is not None:
+        contributions.extend(_walk(consequence, consequence_context, ruleset))
+
+    alternative = node.child_by_field_name("alternative")
+    if alternative is not None:
+        alternative_context = ScoringContext(nesting=context.nesting + 1)
+        contributions.extend(_walk(alternative, alternative_context, ruleset))
+
+    return contributions
+
+
 def _control_flow_rule(rule_id: str, label: str) -> RuleScorer:
     def score(node: Node, context: ScoringContext) -> list[ComplexityContribution]:
+        if node.type == "if_statement" and _is_else_if(node):
+            return []
         points = 1 + context.nesting
         return [
             ComplexityContribution(
@@ -111,17 +144,51 @@ def _control_flow_rule(rule_id: str, label: str) -> RuleScorer:
     return score
 
 
+def _else_rule(node: Node, _context: ScoringContext) -> list[ComplexityContribution]:
+    alternative = node.child_by_field_name("alternative")
+    if alternative is None:
+        return []
+    return [
+        ComplexityContribution(
+            rule_id="java.else",
+            line=alternative.start_point.row + 1,
+            points=1,
+            message="else branch",
+        )
+    ]
+
+
+def _labeled_jump_rule(rule_id: str, label: str) -> RuleScorer:
+    def score(node: Node, _context: ScoringContext) -> list[ComplexityContribution]:
+        jump_label = next((child for child in node.children if child.type == "identifier"), None)
+        if jump_label is None:
+            return []
+        return [
+            ComplexityContribution(
+                rule_id=rule_id,
+                line=node.start_point.row + 1,
+                points=1,
+                message=f"labeled {label}",
+            )
+        ]
+
+    return score
+
+
 def _boolean_chain_rule(node: Node, _context: ScoringContext) -> list[ComplexityContribution]:
     if not _is_boolean_binary_expression(node):
         return []
     parent = node.parent
     if parent is not None and _is_boolean_binary_expression(parent):
         return []
+    sequence_count = _boolean_sequence_count(node)
+    if sequence_count == 0:
+        return []
     return [
         ComplexityContribution(
             rule_id="java.boolean_chain",
             line=node.start_point.row + 1,
-            points=1,
+            points=sequence_count,
             message="boolean operator chain",
         )
     ]
@@ -133,11 +200,62 @@ def _is_boolean_binary_expression(node: Node) -> bool:
     return any(child.type in {"&&", "||"} for child in node.children)
 
 
+def _boolean_sequence_count(node: Node) -> int:
+    count = 0
+    current_operator: str | None = None
+    for operator in _boolean_operator_sequence(node):
+        if operator is None:
+            current_operator = None
+        elif operator != current_operator:
+            count += 1
+            current_operator = operator
+    return count
+
+
+def _boolean_operator_sequence(node: Node) -> list[str | None]:
+    if node.type == "binary_expression":
+        operators: list[str | None] = []
+        for child in node.children:
+            if child.type in {"&&", "||"}:
+                operators.append(child.type)
+            elif child.is_named:
+                operators.extend(_boolean_operator_sequence(child))
+        return operators
+    if node.type == "unary_expression" and any(child.type == "!" for child in node.children):
+        operators = [None]
+        for child in node.children:
+            if child.is_named:
+                operators.extend(_boolean_operator_sequence(child))
+        return operators
+    return []
+
+
+def _is_else_if(node: Node) -> bool:
+    parent = node.parent
+    return (
+        parent is not None
+        and parent.type == "if_statement"
+        and _field_name(parent, node) == "alternative"
+    )
+
+
+def _field_name(parent: Node, child: Node) -> str | None:
+    for index, candidate in enumerate(parent.children):
+        if candidate == child:
+            return parent.field_name_for_child(index)
+    return None
+
+
 JAVA_CONTROL_FLOW_RULES = [
     ComplexityRule(
         id="java.if",
         node_types={"if_statement"},
         score=_control_flow_rule("java.if", "if statement"),
+    ),
+    ComplexityRule(
+        id="java.else",
+        node_types={"if_statement"},
+        score=_else_rule,
     ),
     ComplexityRule(
         id="java.loop",
@@ -163,6 +281,16 @@ JAVA_CONTROL_FLOW_RULES = [
         id="java.ternary",
         node_types={"ternary_expression"},
         score=_control_flow_rule("java.ternary", "ternary expression"),
+    ),
+    ComplexityRule(
+        id="java.break",
+        node_types={"break_statement"},
+        score=_labeled_jump_rule("java.break", "break"),
+    ),
+    ComplexityRule(
+        id="java.continue",
+        node_types={"continue_statement"},
+        score=_labeled_jump_rule("java.continue", "continue"),
     ),
 ]
 

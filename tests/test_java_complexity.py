@@ -30,6 +30,22 @@ def test_nested_if_scores_three() -> None:
     assert score_method("class Foo { void a() { if (x) { if (y) { run(); } } } }\n") == 3
 
 
+def test_if_else_scores_two() -> None:
+    assert score_method("class Foo { void a() { if (x) { run(); } else { stop(); } } }\n") == 2
+    assert contribution_ids(
+        "class Foo { void a() { if (x) { run(); } else { stop(); } } }\n"
+    ).count("java.else") == 1
+
+
+def test_else_if_chain_does_not_add_nested_if_penalty() -> None:
+    assert (
+        score_method(
+            "class Foo { void a() { if (x) { run(); } else if (y) { stop(); } else { wait(); } } }\n"
+        )
+        == 3
+    )
+
+
 def test_loop_scores_one() -> None:
     assert score_method("class Foo { void a() { while (x) { run(); } } }\n") == 1
 
@@ -57,6 +73,25 @@ def test_boolean_chain_scores_one() -> None:
     assert contribution_ids("class Foo { void a() { if (a && b && c) { run(); } } }\n").count(
         "java.boolean_chain"
     ) == 1
+
+
+def test_mixed_boolean_operator_sequences_score_each_run() -> None:
+    assert score_method("class Foo { void a() { if (a && b || c && d) { run(); } } }\n") == 4
+
+
+def test_labeled_jump_scores_one() -> None:
+    assert score_method("class Foo { void a() { OUT: while (x) { break OUT; } } }\n") == 2
+    assert "java.break" in contribution_ids(
+        "class Foo { void a() { OUT: while (x) { break OUT; } } }\n"
+    )
+
+
+def test_unlabeled_jump_does_not_score() -> None:
+    assert score_method("class Foo { void a() { while (x) { break; } } }\n") == 1
+
+
+def test_lambda_increases_nesting_without_scoring_itself() -> None:
+    assert score_method("class Foo { void a() { Runnable r = () -> { if (x) run(); }; } }\n") == 2
 
 
 def test_control_flow_ruleset_excludes_boolean_chain() -> None:
