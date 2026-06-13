@@ -73,6 +73,23 @@ def test_negative_threshold_exits_with_error() -> None:
     assert exc.value.code == EXIT_ERROR
 
 
+def test_hotspots_parses() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["--hotspots"])
+
+    assert args.hotspots is True
+
+
+def test_details_and_hotspots_are_mutually_exclusive() -> None:
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["--details", "--hotspots"])
+
+    assert exc.value.code == EXIT_ERROR
+
+
 def test_debug_show_snapshots_parses() -> None:
     parser = build_parser()
 

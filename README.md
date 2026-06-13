@@ -56,6 +56,12 @@ Show changed Java files:
 diffcog --details
 ```
 
+Show top complexity hotspots:
+
+```bash
+diffcog --hotspots
+```
+
 Print JSON:
 
 ```bash

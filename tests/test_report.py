@@ -7,6 +7,7 @@ import pytest
 
 from diffcog.debug_analysis import build_complexity_debug, build_symbol_debug
 from diffcog.errors import DiffcogError
+from diffcog.languages.java.complexity import ComplexityContribution, ComplexityResult
 from diffcog.languages.java.complexity import score_callable
 from diffcog.languages.java.parser import parse_snapshot
 from diffcog.models import AnalysisResult, ChangedFile, Comparison, Endpoint, EndpointKind, LineRange, Thresholds
@@ -45,6 +46,20 @@ def _file(
         path=path,
         old_ranges=old_ranges or [],
         new_ranges=new_ranges or [],
+    )
+
+
+def _complexity_result(points: int) -> ComplexityResult:
+    return ComplexityResult(
+        score=points,
+        contributions=[
+            ComplexityContribution(
+                rule_id="java.if",
+                line=1,
+                points=points,
+                message="if statement at nesting depth 0",
+            )
+        ],
     )
 
 
@@ -141,6 +156,146 @@ def test_text_report_with_complexity_delta_details() -> None:
     assert "delta +2" in output
     assert "complexity on changed lines:" in output
     assert "java.if line 1 +1" in output
+
+
+def test_text_report_with_hotspots() -> None:
+    file = _file(old_ranges=[LineRange(1, 1)], new_ranges=[LineRange(1, 1)])
+    small_callable = parse_snapshot("class Foo { void small() { if (x) { run(); } } }\n").callables[0]
+    large_callable = parse_snapshot("class Foo { void large() { if (x) { run(); } } }\n").callables[0]
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[file],
+        source_pairs=[],
+        file_deltas=[
+            FileComplexityDelta(
+                file=file,
+                callables=[
+                    CallableComplexityDelta(
+                        status="modified",
+                        before_callable=small_callable,
+                        after_callable=small_callable,
+                        before_result=_complexity_result(5),
+                        after_result=_complexity_result(8),
+                        before_score=5,
+                        after_score=8,
+                        delta=3,
+                    ),
+                    CallableComplexityDelta(
+                        status="removed",
+                        before_callable=large_callable,
+                        after_callable=None,
+                        before_result=_complexity_result(9),
+                        after_result=None,
+                        before_score=9,
+                        after_score=0,
+                        delta=-9,
+                    ),
+                ],
+                unmapped_before_ranges=[],
+                unmapped_after_ranges=[],
+            )
+        ],
+        new_complexity=3,
+        removed_complexity=9,
+        net_delta=-6,
+    )
+
+    output = format_text(result, Thresholds(), hotspots=True)
+
+    assert "Hotspots:" in output
+    assert output.index("Foo#large/0 method 9 -> 0 (delta -9)") < output.index(
+        "Foo#small/0 method 5 -> 8 (delta +3)"
+    )
+    assert "top rule: java.if line 1 +9" in output
+    assert "complexity on changed lines:" not in output
+
+
+def test_text_report_hotspots_limit_mentions_details() -> None:
+    file = _file(new_ranges=[LineRange(1, 1)])
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[file],
+        source_pairs=[],
+        file_deltas=[
+            FileComplexityDelta(
+                file=file,
+                callables=[
+                    CallableComplexityDelta(
+                        status="added",
+                        before_callable=None,
+                        after_callable=parse_snapshot(
+                            f"class Foo {{ void m{index}() {{ if (x) {{ run(); }} }} }}\n"
+                        ).callables[0],
+                        before_result=None,
+                        after_result=_complexity_result(index + 1),
+                        before_score=0,
+                        after_score=index + 1,
+                        delta=index + 1,
+                    )
+                    for index in range(11)
+                ],
+                unmapped_before_ranges=[],
+                unmapped_after_ranges=[],
+            )
+        ],
+        new_complexity=66,
+        removed_complexity=0,
+        net_delta=66,
+    )
+
+    output = format_text(result, Thresholds(), hotspots=True)
+
+    assert "Showing 10 of 11 hotspots. Use --details for the full list." in output
+    assert "Foo#m10/0 method 0 -> 11 (delta +11)" in output
+    assert "Foo#m0/0 method 0 -> 1 (delta +1)" not in output
+
+
+def test_text_report_hotspots_without_complexity_changes() -> None:
+    file = _file(new_ranges=[LineRange(1, 1)])
+    callable_ = parse_snapshot("class Foo { void a() { run(); } }\n").callables[0]
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[file],
+        source_pairs=[],
+        file_deltas=[
+            FileComplexityDelta(
+                file=file,
+                callables=[
+                    CallableComplexityDelta(
+                        status="modified",
+                        before_callable=callable_,
+                        after_callable=callable_,
+                        before_result=_complexity_result(0),
+                        after_result=_complexity_result(0),
+                        before_score=0,
+                        after_score=0,
+                        delta=0,
+                    )
+                ],
+                unmapped_before_ranges=[],
+                unmapped_after_ranges=[],
+            )
+        ],
+    )
+
+    output = format_text(result, Thresholds(), hotspots=True)
+
+    assert "No complexity hotspots found." in output
+
+
+def test_json_report_ignores_hotspots_mode() -> None:
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[_file()],
+        source_pairs=[],
+    )
+
+    payload = json.loads(format_json(result, Thresholds()))
+
+    assert "hotspots" not in payload
+    assert payload["files"] == [
+        {"status": "M", "path": "src/Foo.java", "old_path": "src/Foo.java"}
+    ]
 
 
 def test_snapshot_text_report() -> None:

@@ -10,7 +10,15 @@ if TYPE_CHECKING:
     from diffcog.languages.java.models import JavaCallable
 
 
-def format_text(result: AnalysisResult, thresholds: Thresholds, details: bool = False) -> str:
+HOTSPOT_LIMIT = 10
+
+
+def format_text(
+    result: AnalysisResult,
+    thresholds: Thresholds,
+    details: bool = False,
+    hotspots: bool = False,
+) -> str:
     lines = [
         f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
         f"Rule set: {result.ruleset_id}",
@@ -35,6 +43,8 @@ def format_text(result: AnalysisResult, thresholds: Thresholds, details: bool = 
     elif details and result.files:
         lines.extend(["", "Changed Java files:"])
         lines.extend(f"  {_format_changed_file(file.status, file.old_path, file.path)}" for file in result.files)
+    elif hotspots and result.files:
+        lines.extend(["", *_format_hotspots(result.file_deltas)])
 
     if result.threshold_failed(thresholds):
         lines.extend(["", "Threshold failed."])
@@ -271,6 +281,61 @@ def _format_file_delta_details(file_deltas: list[Any]) -> list[str]:
     if lines and lines[-1] == "":
         lines.pop()
     return lines
+
+
+def _format_hotspots(file_deltas: list[Any]) -> list[str]:
+    hotspot_rows = sorted(
+        [
+            (file_delta, callable_delta)
+            for file_delta in file_deltas
+            for callable_delta in file_delta.callables
+            if callable_delta.delta != 0
+        ],
+        key=_hotspot_sort_key,
+    )
+    if not hotspot_rows:
+        return ["No complexity hotspots found."]
+
+    lines = ["Hotspots:"]
+    for file_delta, callable_delta in hotspot_rows[:HOTSPOT_LIMIT]:
+        callable_ = callable_delta.after_callable or callable_delta.before_callable
+        lines.append(
+            f"  {file_delta.file.path}:{callable_.start_line} "
+            f"{_format_callable_signature(callable_)} {callable_.kind} "
+            f"{callable_delta.before_score} -> {callable_delta.after_score} "
+            f"(delta {_format_signed(callable_delta.delta)})"
+        )
+        contribution = _top_changed_line_contribution(callable_delta, file_delta.file)
+        if contribution is not None:
+            lines.append(
+                f"    top rule: {contribution.rule_id} line {contribution.line} "
+                f"+{contribution.points}"
+            )
+
+    if len(hotspot_rows) > HOTSPOT_LIMIT:
+        lines.append(
+            f"Showing {HOTSPOT_LIMIT} of {len(hotspot_rows)} hotspots. "
+            "Use --details for the full list."
+        )
+    return lines
+
+
+def _hotspot_sort_key(row: tuple[Any, CallableComplexityDelta]) -> tuple[int, str, int, str]:
+    file_delta, callable_delta = row
+    callable_ = callable_delta.after_callable or callable_delta.before_callable
+    return (
+        -abs(callable_delta.delta),
+        file_delta.file.path,
+        callable_.start_line,
+        _format_callable_signature(callable_),
+    )
+
+
+def _top_changed_line_contribution(callable_delta: CallableComplexityDelta, file: Any) -> Any | None:
+    contributions = _changed_line_contributions(callable_delta, file)
+    if not contributions:
+        return None
+    return min(contributions, key=lambda contribution: (-contribution.points, contribution.line, contribution.rule_id))
 
 
 def _format_callable_delta_group(

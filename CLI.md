@@ -316,11 +316,27 @@ Detailed attribution should require:
 diffcog --details
 ```
 
+Hotspot output should require:
+
+```bash
+diffcog --hotspots
+```
+
+`--hotspots` prints the normal summary plus up to 10 changed methods or
+constructors with nonzero complexity deltas. Hotspots are sorted by biggest
+absolute complexity change first. Each hotspot includes the file and start line,
+callable name, callable kind, before and after complexity, signed delta, and at
+most one top changed-line rule hint.
+
+`--details` and `--hotspots` are mutually exclusive.
+
 Machine-readable output should require:
 
 ```bash
 diffcog --json
 ```
+
+`--json --hotspots` keeps the normal JSON shape.
 
 The exact schemas and text layout are still open.
 

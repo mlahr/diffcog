@@ -51,7 +51,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-new", type=_non_negative_int, default=None)
     parser.add_argument("--max-delta", type=_non_negative_int, default=None)
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
-    parser.add_argument("--details", action="store_true", help="include changed file details in text output")
+    report_group = parser.add_mutually_exclusive_group()
+    report_group.add_argument(
+        "--details", action="store_true", help="include changed file details in text output"
+    )
+    report_group.add_argument(
+        "--hotspots", action="store_true", help="show top complexity hotspots in text output"
+    )
     parser.add_argument(
         "--ruleset",
         default=DEFAULT_JAVA_RULESET.id,
@@ -109,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.json:
             print(format_json(result, thresholds), end="")
         else:
-            print(format_text(result, thresholds, details=args.details), end="")
+            print(format_text(result, thresholds, details=args.details, hotspots=args.hotspots), end="")
     except DiffcogError as exc:
         print(f"diffcog: error: {exc}", file=sys.stderr)
         return EXIT_ERROR
