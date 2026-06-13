@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import subprocess
+import json
 from pathlib import Path
 
 from diffcog.analysis import analyze
 from diffcog.cli import resolve_comparison
+from diffcog.report import format_json
+from diffcog.report import format_text
+from diffcog.report import format_complexity_text
 from diffcog.report import format_symbol_text
+from diffcog.models import Thresholds
 
 
 def git(repo: Path, *args: str) -> str:
@@ -189,3 +194,105 @@ def test_show_symbols_report_for_deleted_java_file(tmp_path: Path) -> None:
     assert "D src/Foo.java" in output
     assert "  removed:" in output
     assert "Foo#a/0 method lines 1-1" in output
+
+
+def test_show_complexity_report_for_changed_java_file(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void a() { if (x) { run(); } } }\n")
+
+    result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
+    output = format_complexity_text(result)
+
+    assert "Complexity dump" in output
+    assert "Foo#a/0 method complexity 1" in output
+    assert "java.if line 1 +1" in output
+
+
+def test_added_callable_contributes_new_complexity(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void a() { if (x) { run(); } } }\n")
+
+    result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
+
+    assert result.new_complexity == 1
+    assert result.removed_complexity == 0
+    assert result.net_delta == 1
+    assert result.file_deltas[0].callables[0].status == "added"
+
+
+def test_modified_callable_computes_delta(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void a() { if (x) { run(); } } }\n")
+    git(tmp_path, "add", "src/Foo.java")
+    git(tmp_path, "commit", "-m", "add if")
+    write(tmp_path, "src/Foo.java", "class Foo { void a() { if (x) { if (y) { run(); } } } }\n")
+
+    result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
+    callable_delta = result.file_deltas[0].callables[0]
+
+    assert callable_delta.status == "modified"
+    assert callable_delta.before_score == 1
+    assert callable_delta.after_score == 3
+    assert callable_delta.delta == 2
+    assert result.new_complexity == 2
+    assert result.net_delta == 2
+
+
+def test_removed_callable_contributes_removed_complexity(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void a() { if (x) { run(); } } }\n")
+    git(tmp_path, "add", "src/Foo.java")
+    git(tmp_path, "commit", "-m", "add if")
+    write(tmp_path, "src/Foo.java", "class Foo {}\n")
+
+    result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
+
+    assert result.new_complexity == 0
+    assert result.removed_complexity == 1
+    assert result.net_delta == -1
+    assert result.file_deltas[0].callables[0].status == "removed"
+
+
+def test_import_only_change_has_zero_complexity(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "import java.util.Map;\nclass Foo {}\n")
+
+    result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
+
+    assert result.new_complexity == 0
+    assert result.removed_complexity == 0
+    assert result.net_delta == 0
+    assert result.file_deltas[0].callables == []
+
+
+def test_text_details_include_complexity_delta(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void a() { if (x) { run(); } } }\n")
+
+    result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
+    output = format_text(result, Thresholds(), details=True)
+
+    assert "New complexity: +1" in output
+    assert "Foo#a/0 method" in output
+    assert "after  complexity 1" in output
+    assert "delta +1" in output
+    assert "complexity on changed lines:" in output
+    assert "java.if line 1 +1" in output
+
+
+def test_json_details_include_changed_line_contributions(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void a() { if (x) { run(); } } }\n")
+
+    result = analyze(resolve_comparison([], staged=False, unstaged=False), tmp_path)
+    payload = json.loads(format_json(result, Thresholds()))
+
+    callable_payload = payload["files"][0]["callables"][0]
+    assert callable_payload["changed_line_contributions"] == [
+        {
+            "rule_id": "java.if",
+            "line": 1,
+            "points": 1,
+            "message": "if statement at nesting depth 0",
+        }
+    ]

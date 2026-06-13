@@ -4,7 +4,8 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from diffcog.errors import DiffcogError
-from diffcog.models import AnalysisResult, LineRange, Thresholds
+from diffcog.languages.java.selection import changed_callables, classify_callables, unmapped_ranges
+from diffcog.models import AnalysisResult, CallableComplexityDelta, LineRange, Thresholds
 
 if TYPE_CHECKING:
     from diffcog.languages.java.models import JavaCallable, ParsedSnapshot
@@ -29,7 +30,9 @@ def format_text(result: AnalysisResult, thresholds: Thresholds, details: bool = 
         ]
     )
 
-    if details and result.files:
+    if details and result.file_deltas:
+        lines.extend(["", *_format_file_delta_details(result.file_deltas)])
+    elif details and result.files:
         lines.extend(["", "Changed Java files:"])
         lines.extend(f"  {_format_changed_file(file.status, file.old_path, file.path)}" for file in result.files)
 
@@ -46,14 +49,7 @@ def format_json(result: AnalysisResult, thresholds: Thresholds) -> str:
             "before": result.comparison.before.label,
             "after": result.comparison.after.label,
         },
-        "files": [
-            {
-                "status": file.status,
-                "path": file.path,
-                "old_path": file.old_path,
-            }
-            for file in result.files
-        ],
+        "files": _json_files_payload(result),
         "new_complexity": result.new_complexity,
         "removed_complexity": result.removed_complexity,
         "net_delta": result.net_delta,
@@ -128,11 +124,11 @@ def format_symbol_text(result: AnalysisResult) -> str:
     for pair in result.source_pairs:
         before = parse_snapshot(pair.before)
         after = parse_snapshot(pair.after)
-        before_callables = _touched_callables(before.callables, pair.file.old_ranges)
-        after_callables = _touched_callables(after.callables, pair.file.new_ranges)
-        before_outside = _outside_ranges(pair.file.old_ranges, before.callables)
-        after_outside = _outside_ranges(pair.file.new_ranges, after.callables)
-        modified, added, removed = _classify_callables(before_callables, after_callables)
+        before_callables = changed_callables(before.callables, pair.file.old_ranges)
+        after_callables = changed_callables(after.callables, pair.file.new_ranges)
+        before_outside = unmapped_ranges(pair.file.old_ranges, before.callables)
+        after_outside = unmapped_ranges(pair.file.new_ranges, after.callables)
+        modified, added, removed = classify_callables(before_callables, after_callables)
         lines.extend(
             [
                 "",
@@ -173,6 +169,72 @@ def format_symbol_json(result: AnalysisResult) -> str:
     return json.dumps(payload, indent=2, sort_keys=False) + "\n"
 
 
+def format_complexity_text(result: AnalysisResult) -> str:
+    parse_snapshot = _load_java_parser()
+    score_callable = _load_java_scorer()
+
+    lines = [
+        f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
+        "",
+        "Complexity dump",
+    ]
+
+    if not result.source_pairs:
+        lines.extend(["", "No Java changes found."])
+        return "\n".join(lines) + "\n"
+
+    for pair in result.source_pairs:
+        before = parse_snapshot(pair.before)
+        after = parse_snapshot(pair.after)
+        before_callables = changed_callables(before.callables, pair.file.old_ranges)
+        after_callables = changed_callables(after.callables, pair.file.new_ranges)
+        modified, added, removed = classify_callables(before_callables, after_callables)
+        lines.extend(
+            [
+                "",
+                _format_changed_file(pair.file.status, pair.file.old_path, pair.file.path),
+                *_format_complexity_groups(modified, added, removed, score_callable),
+            ]
+        )
+
+    return "\n".join(lines) + "\n"
+
+
+def format_complexity_json(result: AnalysisResult) -> str:
+    parse_snapshot = _load_java_parser()
+    score_callable = _load_java_scorer()
+
+    payload: dict[str, Any] = {
+        "comparison": {
+            "mode": result.comparison.mode,
+            "before": result.comparison.before.label,
+            "after": result.comparison.after.label,
+        },
+        "debug": "show-complexity",
+        "files": [],
+    }
+    for pair in result.source_pairs:
+        before = parse_snapshot(pair.before)
+        after = parse_snapshot(pair.after)
+        before_callables = changed_callables(before.callables, pair.file.old_ranges)
+        after_callables = changed_callables(after.callables, pair.file.new_ranges)
+        modified, added, removed = classify_callables(before_callables, after_callables)
+        payload["files"].append(
+            {
+                "status": pair.file.status,
+                "path": pair.file.path,
+                "old_path": pair.file.old_path,
+                "callables": [
+                    *_complexity_payloads("modified", [after for _, after in modified], score_callable),
+                    *_complexity_payloads("added", added, score_callable),
+                    *_complexity_payloads("removed", removed, score_callable),
+                ],
+            }
+        )
+
+    return json.dumps(payload, indent=2, sort_keys=False) + "\n"
+
+
 def _format_signed(value: int) -> str:
     if value >= 0:
         return f"+{value}"
@@ -183,6 +245,115 @@ def _format_changed_file(status: str, old_path: str, path: str) -> str:
     if status.startswith("R") or status.startswith("C"):
         return f"{status} {old_path} -> {path}"
     return f"{status} {path}"
+
+
+def _json_files_payload(result: AnalysisResult) -> list[dict[str, Any]]:
+    if result.file_deltas:
+        return [
+            {
+                "status": file_delta.file.status,
+                "path": file_delta.file.path,
+                "old_path": file_delta.file.old_path,
+                "callables": [
+                    _callable_delta_payload(callable_delta, file_delta.file)
+                    for callable_delta in file_delta.callables
+                ],
+            }
+            for file_delta in result.file_deltas
+        ]
+    return [
+        {
+            "status": file.status,
+            "path": file.path,
+            "old_path": file.old_path,
+        }
+        for file in result.files
+    ]
+
+
+def _format_file_delta_details(file_deltas: list[Any]) -> list[str]:
+    lines = []
+    for file_delta in file_deltas:
+        lines.append(_format_changed_file(file_delta.file.status, file_delta.file.old_path, file_delta.file.path))
+        added = [delta for delta in file_delta.callables if delta.status == "added"]
+        modified = [delta for delta in file_delta.callables if delta.status == "modified"]
+        removed = [delta for delta in file_delta.callables if delta.status == "removed"]
+        lines.extend(_format_callable_delta_group("modified", modified, file_delta.file))
+        lines.extend(_format_callable_delta_group("added", added, file_delta.file))
+        lines.extend(_format_callable_delta_group("removed", removed, file_delta.file))
+        if not file_delta.callables:
+            lines.append("  no changed methods/constructors")
+        lines.append("")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def _format_callable_delta_group(
+    label: str, callable_deltas: list[CallableComplexityDelta], file: Any
+) -> list[str]:
+    if not callable_deltas:
+        return []
+
+    lines = [f"  {label}:"]
+    for callable_delta in callable_deltas:
+        callable_ = callable_delta.after_callable or callable_delta.before_callable
+        lines.append(f"    {_format_callable_signature(callable_)} {callable_.kind}")
+        if callable_delta.before_callable is not None:
+            lines.append(f"      before complexity {callable_delta.before_score}")
+        if callable_delta.after_callable is not None:
+            lines.append(f"      after  complexity {callable_delta.after_score}")
+        lines.append(f"      delta {_format_signed(callable_delta.delta)}")
+        contributions = _changed_line_contributions(callable_delta, file)
+        if contributions:
+            lines.append("      complexity on changed lines:")
+            lines.extend(
+                f"        {contribution.rule_id} line {contribution.line} +{contribution.points}"
+                for contribution in contributions
+            )
+    return lines
+
+
+def _callable_delta_payload(callable_delta: CallableComplexityDelta, file: Any) -> dict[str, Any]:
+    callable_ = callable_delta.after_callable or callable_delta.before_callable
+    return {
+        "status": callable_delta.status,
+        **_callable_payload(callable_),
+        "before_score": callable_delta.before_score,
+        "after_score": callable_delta.after_score,
+        "delta": callable_delta.delta,
+        "changed_line_contributions": [
+            {
+                "rule_id": contribution.rule_id,
+                "line": contribution.line,
+                "points": contribution.points,
+                "message": contribution.message,
+            }
+            for contribution in _changed_line_contributions(callable_delta, file)
+        ],
+    }
+
+
+def _changed_line_contributions(callable_delta: CallableComplexityDelta, file: Any) -> list[Any]:
+    if callable_delta.status in {"added", "modified"}:
+        result = callable_delta.after_result
+        ranges = file.new_ranges
+    else:
+        result = callable_delta.before_result
+        ranges = file.old_ranges
+
+    if result is None:
+        return []
+
+    return [
+        contribution
+        for contribution in result.contributions
+        if any(_line_in_range(contribution.line, range_) for range_ in ranges)
+    ]
+
+
+def _line_in_range(line: int, range_: LineRange) -> bool:
+    return range_.start <= line <= range_.end
 
 
 def _format_snapshot_stats(source: str | None) -> str:
@@ -253,39 +424,59 @@ def _format_unmapped_lines(
     return lines
 
 
-def _classify_callables(
-    before_callables: list[JavaCallable], after_callables: list[JavaCallable]
-) -> tuple[list[tuple[JavaCallable, JavaCallable]], list[JavaCallable], list[JavaCallable]]:
-    before_by_key = {_callable_key(callable_): callable_ for callable_ in before_callables}
-    after_by_key = {_callable_key(callable_): callable_ for callable_ in after_callables}
+def _format_complexity_groups(
+    modified: list[tuple[JavaCallable, JavaCallable]],
+    added: list[JavaCallable],
+    removed: list[JavaCallable],
+    score_callable: Any,
+) -> list[str]:
+    lines = []
+    if modified:
+        lines.append("  modified:")
+        for _, after_callable in modified:
+            lines.extend(_format_complexity_callable(after_callable, score_callable))
+    if added:
+        lines.append("  added:")
+        for callable_ in added:
+            lines.extend(_format_complexity_callable(callable_, score_callable))
+    if removed:
+        lines.append("  removed:")
+        for callable_ in removed:
+            lines.extend(_format_complexity_callable(callable_, score_callable))
+    if not lines:
+        lines.append("  no changed methods/constructors")
+    return lines
 
-    modified = [
-        (before_by_key[key], after_by_key[key])
-        for key in before_by_key.keys() & after_by_key.keys()
-    ]
-    added = [
-        after_by_key[key]
-        for key in after_by_key.keys() - before_by_key.keys()
-    ]
-    removed = [
-        before_by_key[key]
-        for key in before_by_key.keys() - after_by_key.keys()
-    ]
 
-    return (
-        sorted(modified, key=lambda pair: pair[1].start_line),
-        sorted(added, key=lambda callable_: callable_.start_line),
-        sorted(removed, key=lambda callable_: callable_.start_line),
+def _format_complexity_callable(callable_: JavaCallable, score_callable: Any) -> list[str]:
+    result = score_callable(callable_)
+    lines = [f"    {_format_callable_signature(callable_)} {callable_.kind} complexity {result.score}"]
+    lines.extend(
+        f"      {contribution.rule_id} line {contribution.line} +{contribution.points}"
+        for contribution in result.contributions
     )
+    return lines
 
 
-def _callable_key(callable_: JavaCallable) -> tuple[tuple[str, ...], str, int, str]:
-    return (
-        tuple(callable_.class_path),
-        callable_.name,
-        callable_.parameter_count,
-        callable_.kind,
-    )
+def _complexity_payloads(status: str, callables: list[JavaCallable], score_callable: Any) -> list[dict[str, Any]]:
+    return [
+        {
+            "status": status,
+            **_callable_payload(callable_),
+            "score": result.score,
+            "contributions": [
+                {
+                    "rule_id": contribution.rule_id,
+                    "line": contribution.line,
+                    "points": contribution.points,
+                    "message": contribution.message,
+                }
+                for contribution in result.contributions
+            ],
+        }
+        for callable_ in callables
+        for result in [score_callable(callable_)]
+    ]
 
 
 def _format_callable_signature(callable_: JavaCallable) -> str:
@@ -310,11 +501,11 @@ def _touched_parsed_snapshot_payload(
         "parse_error": snapshot.parse_error,
         "callables": [
             _callable_payload(callable_)
-            for callable_ in _touched_callables(snapshot.callables, changed_ranges)
+            for callable_ in changed_callables(snapshot.callables, changed_ranges)
         ],
         "outside_ranges": [
             {"start": range_.start, "end": range_.end}
-            for range_ in _outside_ranges(changed_ranges, snapshot.callables)
+            for range_ in unmapped_ranges(changed_ranges, snapshot.callables)
         ],
     }
 
@@ -328,30 +519,6 @@ def _callable_payload(callable_: JavaCallable) -> dict[str, Any]:
         "start_line": callable_.start_line,
         "end_line": callable_.end_line,
     }
-
-
-def _touched_callables(
-    callables: list[JavaCallable], changed_ranges: list[LineRange]
-) -> list[JavaCallable]:
-    return [
-        callable_
-        for callable_ in callables
-        if any(_ranges_intersect(callable_.start_line, callable_.end_line, range_) for range_ in changed_ranges)
-    ]
-
-
-def _outside_ranges(
-    changed_ranges: list[LineRange], callables: list[JavaCallable]
-) -> list[LineRange]:
-    return [
-        range_
-        for range_ in changed_ranges
-        if not any(_ranges_intersect(callable_.start_line, callable_.end_line, range_) for callable_ in callables)
-    ]
-
-
-def _ranges_intersect(start: int, end: int, range_: LineRange) -> bool:
-    return start <= range_.end and range_.start <= end
 
 
 def _format_ranges(ranges: list[LineRange]) -> str:
@@ -373,3 +540,17 @@ def _load_java_parser() -> Any:
             ) from exc
         raise
     return parse_snapshot
+
+
+def _load_java_scorer() -> Any:
+    try:
+        from diffcog.languages.java.complexity import score_callable
+    except ModuleNotFoundError as exc:
+        if exc.name in {"tree_sitter", "tree_sitter_java"}:
+            raise DiffcogError(
+                "Java complexity dependencies are missing. "
+                "Refresh the installed tool with: "
+                "uv tool install --force -e /Users/michael/Code/mlahr/diff-complexity"
+            ) from exc
+        raise
+    return score_callable

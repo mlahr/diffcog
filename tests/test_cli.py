@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from diffcog.cli import EXIT_ERROR, build_parser, resolve_comparison
-from diffcog.models import EndpointKind
+from diffcog.cli import EXIT_ERROR, EXIT_THRESHOLD, build_parser, main, resolve_comparison
+from diffcog.models import AnalysisResult, Comparison, Endpoint, EndpointKind
 
 
 def test_default_resolves_head_to_worktree() -> None:
@@ -89,6 +89,14 @@ def test_debug_show_symbols_parses() -> None:
     assert args.debug == "show-symbols"
 
 
+def test_debug_show_complexity_parses() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["--debug", "show-complexity"])
+
+    assert args.debug == "show-complexity"
+
+
 def test_unknown_debug_mode_exits_with_error() -> None:
     parser = build_parser()
 
@@ -96,3 +104,41 @@ def test_unknown_debug_mode_exits_with_error() -> None:
         parser.parse_args(["--debug", "dump-snapshots"])
 
     assert exc.value.code == EXIT_ERROR
+
+
+def test_max_new_threshold_exits_two(monkeypatch: pytest.MonkeyPatch) -> None:
+    comparison = Comparison(
+        mode="ref_to_worktree",
+        before=Endpoint(EndpointKind.REF, "HEAD"),
+        after=Endpoint(EndpointKind.WORKTREE, "working tree"),
+    )
+    result = AnalysisResult(
+        comparison=comparison,
+        files=[],
+        source_pairs=[],
+        new_complexity=2,
+        removed_complexity=0,
+        net_delta=2,
+    )
+    monkeypatch.setattr("diffcog.cli.analyze", lambda _comparison: result)
+
+    assert main(["--max-new", "1"]) == EXIT_THRESHOLD
+
+
+def test_max_delta_threshold_exits_two(monkeypatch: pytest.MonkeyPatch) -> None:
+    comparison = Comparison(
+        mode="ref_to_worktree",
+        before=Endpoint(EndpointKind.REF, "HEAD"),
+        after=Endpoint(EndpointKind.WORKTREE, "working tree"),
+    )
+    result = AnalysisResult(
+        comparison=comparison,
+        files=[],
+        source_pairs=[],
+        new_complexity=2,
+        removed_complexity=0,
+        net_delta=2,
+    )
+    monkeypatch.setattr("diffcog.cli.analyze", lambda _comparison: result)
+
+    assert main(["--max-delta", "1"]) == EXIT_THRESHOLD

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 
 class EndpointKind(str, Enum):
@@ -46,6 +47,26 @@ class SourcePair:
 
 
 @dataclass(frozen=True)
+class CallableComplexityDelta:
+    status: str
+    before_callable: Any | None
+    after_callable: Any | None
+    before_result: Any | None
+    after_result: Any | None
+    before_score: int
+    after_score: int
+    delta: int
+
+
+@dataclass(frozen=True)
+class FileComplexityDelta:
+    file: ChangedFile
+    callables: list[CallableComplexityDelta]
+    unmapped_before_ranges: list[LineRange]
+    unmapped_after_ranges: list[LineRange]
+
+
+@dataclass(frozen=True)
 class Thresholds:
     max_new: int | None = None
     max_delta: int | None = None
@@ -56,6 +77,7 @@ class AnalysisResult:
     comparison: Comparison
     files: list[ChangedFile]
     source_pairs: list[SourcePair]
+    file_deltas: list[FileComplexityDelta] = field(default_factory=list)
     new_complexity: int = 0
     removed_complexity: int = 0
     net_delta: int = 0

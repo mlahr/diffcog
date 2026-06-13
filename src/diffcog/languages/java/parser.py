@@ -69,6 +69,7 @@ def _extract_callables(node: Node, class_path: list[str]) -> list[JavaCallable]:
                     parameter_count=_parameter_count(node),
                     start_line=node.start_point.row + 1,
                     end_line=node.end_point.row + 1,
+                    node=node,
                 )
             )
 

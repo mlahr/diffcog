@@ -74,6 +74,12 @@ Show parsed Java symbols:
 diffcog --debug show-symbols
 ```
 
+Show complexity scoring for changed Java methods/constructors:
+
+```bash
+diffcog --debug show-complexity
+```
+
 Set threshold exits:
 
 ```bash

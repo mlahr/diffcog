@@ -317,6 +317,14 @@ diffcog --debug show-symbols --json
 This parses loaded Java snapshots and prints extracted methods and constructors.
 It does not print the full AST.
 
+Show complexity scoring for changed Java methods and constructors:
+
+```bash
+diffcog --debug show-complexity
+diffcog main HEAD --debug show-complexity
+diffcog --debug show-complexity --json
+```
+
 ## Later Options
 
 Potential options after the first prototype:

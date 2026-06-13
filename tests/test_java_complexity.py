@@ -1,0 +1,57 @@
+from __future__ import annotations
+
+from diffcog.languages.java.complexity import score_callable
+from diffcog.languages.java.parser import parse_snapshot
+
+
+def score_method(source: str) -> int:
+    snapshot = parse_snapshot(source)
+    assert len(snapshot.callables) == 1
+    return score_callable(snapshot.callables[0]).score
+
+
+def contribution_ids(source: str) -> list[str]:
+    snapshot = parse_snapshot(source)
+    assert len(snapshot.callables) == 1
+    return [contribution.rule_id for contribution in score_callable(snapshot.callables[0]).contributions]
+
+
+def test_empty_method_scores_zero() -> None:
+    assert score_method("class Foo { void a() {} }\n") == 0
+
+
+def test_single_if_scores_one() -> None:
+    assert score_method("class Foo { void a() { if (x) { run(); } } }\n") == 1
+
+
+def test_nested_if_scores_three() -> None:
+    assert score_method("class Foo { void a() { if (x) { if (y) { run(); } } } }\n") == 3
+
+
+def test_loop_scores_one() -> None:
+    assert score_method("class Foo { void a() { while (x) { run(); } } }\n") == 1
+
+
+def test_if_inside_loop_scores_three() -> None:
+    assert score_method("class Foo { void a() { while (x) { if (y) { run(); } } } }\n") == 3
+
+
+def test_catch_scores_one() -> None:
+    assert score_method(
+        "class Foo { void a() { try { run(); } catch (Exception e) { recover(); } } }\n"
+    ) == 1
+
+
+def test_switch_scores_one() -> None:
+    assert score_method("class Foo { void a(int x) { switch (x) { case 1 -> run(); } } }\n") == 1
+
+
+def test_ternary_scores_one() -> None:
+    assert score_method("class Foo { int a() { return x ? 1 : 2; } }\n") == 1
+
+
+def test_boolean_chain_scores_one() -> None:
+    assert score_method("class Foo { void a() { if (a && b && c) { run(); } } }\n") == 2
+    assert contribution_ids("class Foo { void a() { if (a && b && c) { run(); } } }\n").count(
+        "java.boolean_chain"
+    ) == 1

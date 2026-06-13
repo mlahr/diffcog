@@ -6,10 +6,15 @@ from unittest.mock import patch
 import pytest
 
 from diffcog.errors import DiffcogError
+from diffcog.languages.java.complexity import score_callable
+from diffcog.languages.java.parser import parse_snapshot
 from diffcog.models import AnalysisResult, ChangedFile, Comparison, Endpoint, EndpointKind, LineRange, Thresholds
+from diffcog.models import CallableComplexityDelta, FileComplexityDelta
 from diffcog.models import SourcePair
 from diffcog.report import (
     format_json,
+    format_complexity_json,
+    format_complexity_text,
     format_snapshot_json,
     format_snapshot_text,
     format_symbol_json,
@@ -86,6 +91,54 @@ def test_json_report_shape() -> None:
     ]
     assert payload["thresholds"] == {"max_new": 10, "max_delta": 5}
     assert payload["threshold_failed"] is False
+
+
+def test_text_report_with_complexity_delta_details() -> None:
+    file = _file(new_ranges=[LineRange(1, 1)])
+    before_callable = parse_snapshot("class Foo { void a() { if (x) { run(); } } }\n").callables[0]
+    after_callable = parse_snapshot(
+        "class Foo { void a() { if (x) { if (y) { run(); } } } }\n"
+    ).callables[0]
+    before_result = score_callable(before_callable)
+    after_result = score_callable(after_callable)
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[file],
+        source_pairs=[],
+        file_deltas=[
+            FileComplexityDelta(
+                file=file,
+                callables=[
+                    CallableComplexityDelta(
+                        status="modified",
+                        before_callable=before_callable,
+                        after_callable=after_callable,
+                        before_result=before_result,
+                        after_result=after_result,
+                        before_score=before_result.score,
+                        after_score=after_result.score,
+                        delta=after_result.score - before_result.score,
+                    )
+                ],
+                unmapped_before_ranges=[],
+                unmapped_after_ranges=[],
+            )
+        ],
+        new_complexity=2,
+        removed_complexity=0,
+        net_delta=2,
+    )
+
+    output = format_text(result, Thresholds(), details=True)
+
+    assert "New complexity: +2" in output
+    assert "M src/Foo.java" in output
+    assert "modified:" in output
+    assert "before complexity 1" in output
+    assert "after  complexity 3" in output
+    assert "delta +2" in output
+    assert "complexity on changed lines:" in output
+    assert "java.if line 1 +1" in output
 
 
 def test_snapshot_text_report() -> None:
@@ -297,3 +350,47 @@ def test_symbol_report_missing_parser_dependency_has_clear_error() -> None:
     with patch("builtins.__import__", side_effect=ModuleNotFoundError(name="tree_sitter_java")):
         with pytest.raises(DiffcogError, match="Java symbol parsing dependencies are missing"):
             format_symbol_text(result)
+
+
+def test_complexity_text_report() -> None:
+    file = _file(new_ranges=[LineRange(2, 2)])
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[file],
+        source_pairs=[
+            SourcePair(
+                file=file,
+                before="class Foo {}\n",
+                after="class Foo {\n  void a() { if (x) { run(); } }\n}\n",
+            )
+        ],
+    )
+
+    output = format_complexity_text(result)
+
+    assert "Complexity dump" in output
+    assert "  added:" in output
+    assert "Foo#a/0 method complexity 1" in output
+    assert "java.if line 2 +1" in output
+
+
+def test_complexity_json_report_shape() -> None:
+    file = _file(new_ranges=[LineRange(1, 1)])
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[file],
+        source_pairs=[
+            SourcePair(
+                file=file,
+                before="class Foo {}\n",
+                after="class Foo { void a() { if (x) { run(); } } }\n",
+            )
+        ],
+    )
+
+    payload = json.loads(format_complexity_json(result))
+
+    assert payload["debug"] == "show-complexity"
+    assert payload["files"][0]["callables"][0]["status"] == "added"
+    assert payload["files"][0]["callables"][0]["score"] == 1
+    assert payload["files"][0]["callables"][0]["contributions"][0]["rule_id"] == "java.if"

@@ -9,6 +9,8 @@ from diffcog.git import GitError
 from diffcog.models import Comparison, Endpoint, EndpointKind, Thresholds
 from diffcog.report import (
     format_json,
+    format_complexity_json,
+    format_complexity_text,
     format_snapshot_json,
     format_snapshot_text,
     format_symbol_json,
@@ -50,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--details", action="store_true", help="include changed file details in text output")
     parser.add_argument(
         "--debug",
-        choices=["show-snapshots", "show-symbols"],
+        choices=["show-snapshots", "show-symbols", "show-complexity"],
         default=None,
         help="run a debug report mode",
     )
@@ -80,6 +82,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(format_symbol_json(result), end="")
             else:
                 print(format_symbol_text(result), end="")
+        elif args.debug == "show-complexity":
+            if args.json:
+                print(format_complexity_json(result), end="")
+            else:
+                print(format_complexity_text(result), end="")
         elif args.json:
             print(format_json(result, thresholds), end="")
         else:
