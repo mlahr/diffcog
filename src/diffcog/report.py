@@ -297,11 +297,13 @@ def _format_hotspots(file_deltas: list[Any]) -> list[str]:
         return ["No complexity hotspots found."]
 
     lines = ["Hotspots:"]
-    for file_delta, callable_delta in hotspot_rows[:HOTSPOT_LIMIT]:
+    shown_rows = hotspot_rows[:HOTSPOT_LIMIT]
+    display_paths = _shortest_unique_suffixes([file_delta.file.path for file_delta, _ in shown_rows])
+    for index, (file_delta, callable_delta) in enumerate(shown_rows):
         callable_ = callable_delta.after_callable or callable_delta.before_callable
         lines.append(
-            f"  {file_delta.file.path}:{callable_.start_line} "
-            f"{_format_callable_signature(callable_)} {callable_.kind} "
+            f"  {display_paths[index]}:{callable_.start_line} "
+            f"{_format_hotspot_callable_signature(callable_, display_paths[index])} {callable_.kind} "
             f"{callable_delta.before_score} -> {callable_delta.after_score} "
             f"(delta {_format_signed(callable_delta.delta)})"
         )
@@ -318,6 +320,30 @@ def _format_hotspots(file_deltas: list[Any]) -> list[str]:
             "Use --details for the full list."
         )
     return lines
+
+
+def _shortest_unique_suffixes(paths: list[str]) -> list[str]:
+    distinct_split_paths = [path.split("/") for path in dict.fromkeys(paths)]
+    return [
+        _shortest_unique_suffix(path.split("/"), distinct_split_paths)
+        for path in paths
+    ]
+
+
+def _shortest_unique_suffix(path: list[str], all_paths: list[list[str]]) -> str:
+    for suffix_length in range(1, len(path) + 1):
+        suffix = path[-suffix_length:]
+        if sum(other[-suffix_length:] == suffix for other in all_paths) == 1:
+            return "/".join(suffix)
+    return "/".join(path)
+
+
+def _format_hotspot_callable_signature(callable_: JavaCallable, display_path: str) -> str:
+    filename = display_path.rsplit("/", 1)[-1]
+    filename_stem = filename.removesuffix(".java")
+    if callable_.class_path == [filename_stem]:
+        return f"{callable_.name}/{callable_.parameter_count}"
+    return _format_callable_signature(callable_)
 
 
 def _hotspot_sort_key(row: tuple[Any, CallableComplexityDelta]) -> tuple[int, str, int, str]:

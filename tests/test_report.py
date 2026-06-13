@@ -159,7 +159,11 @@ def test_text_report_with_complexity_delta_details() -> None:
 
 
 def test_text_report_with_hotspots() -> None:
-    file = _file(old_ranges=[LineRange(1, 1)], new_ranges=[LineRange(1, 1)])
+    file = _file(
+        path="src/main/java/com/example/Foo.java",
+        old_ranges=[LineRange(1, 1)],
+        new_ranges=[LineRange(1, 1)],
+    )
     small_callable = parse_snapshot("class Foo { void small() { if (x) { run(); } } }\n").callables[0]
     large_callable = parse_snapshot("class Foo { void large() { if (x) { run(); } } }\n").callables[0]
     result = AnalysisResult(
@@ -203,11 +207,114 @@ def test_text_report_with_hotspots() -> None:
     output = format_text(result, Thresholds(), hotspots=True)
 
     assert "Hotspots:" in output
-    assert output.index("Foo#large/0 method 9 -> 0 (delta -9)") < output.index(
-        "Foo#small/0 method 5 -> 8 (delta +3)"
+    assert "src/main/java/com/example/Foo.java" not in output
+    assert "Foo.java:1 large/0 method 9 -> 0 (delta -9)" in output
+    assert "Foo#large/0" not in output
+    assert output.index("large/0 method 9 -> 0 (delta -9)") < output.index(
+        "small/0 method 5 -> 8 (delta +3)"
     )
     assert "top rule: java.if line 1 +9" in output
     assert "complexity on changed lines:" not in output
+
+
+def test_text_report_hotspots_keep_paths_unique() -> None:
+    first_file = _file(
+        path="src/main/java/com/example/service/Foo.java",
+        new_ranges=[LineRange(1, 1)],
+    )
+    second_file = _file(
+        path="src/test/java/com/example/service/Foo.java",
+        new_ranges=[LineRange(1, 1)],
+    )
+    first_callable = parse_snapshot("class Foo { void first() { if (x) { run(); } } }\n").callables[0]
+    second_callable = parse_snapshot("class Foo { void second() { if (x) { run(); } } }\n").callables[0]
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[first_file, second_file],
+        source_pairs=[],
+        file_deltas=[
+            FileComplexityDelta(
+                file=first_file,
+                callables=[
+                    CallableComplexityDelta(
+                        status="added",
+                        before_callable=None,
+                        after_callable=first_callable,
+                        before_result=None,
+                        after_result=_complexity_result(2),
+                        before_score=0,
+                        after_score=2,
+                        delta=2,
+                    )
+                ],
+                unmapped_before_ranges=[],
+                unmapped_after_ranges=[],
+            ),
+            FileComplexityDelta(
+                file=second_file,
+                callables=[
+                    CallableComplexityDelta(
+                        status="added",
+                        before_callable=None,
+                        after_callable=second_callable,
+                        before_result=None,
+                        after_result=_complexity_result(1),
+                        before_score=0,
+                        after_score=1,
+                        delta=1,
+                    )
+                ],
+                unmapped_before_ranges=[],
+                unmapped_after_ranges=[],
+            ),
+        ],
+        new_complexity=3,
+        removed_complexity=0,
+        net_delta=3,
+    )
+
+    output = format_text(result, Thresholds(), hotspots=True)
+
+    assert "main/java/com/example/service/Foo.java:1 first/0" in output
+    assert "test/java/com/example/service/Foo.java:1 second/0" in output
+
+
+def test_text_report_hotspots_keep_nested_class_name() -> None:
+    file = _file(path="src/main/java/com/example/Foo.java", new_ranges=[LineRange(1, 1)])
+    callable_ = parse_snapshot(
+        "class Foo { class Inner { void run() { if (x) { work(); } } } }\n"
+    ).callables[0]
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[file],
+        source_pairs=[],
+        file_deltas=[
+            FileComplexityDelta(
+                file=file,
+                callables=[
+                    CallableComplexityDelta(
+                        status="added",
+                        before_callable=None,
+                        after_callable=callable_,
+                        before_result=None,
+                        after_result=_complexity_result(1),
+                        before_score=0,
+                        after_score=1,
+                        delta=1,
+                    )
+                ],
+                unmapped_before_ranges=[],
+                unmapped_after_ranges=[],
+            )
+        ],
+        new_complexity=1,
+        removed_complexity=0,
+        net_delta=1,
+    )
+
+    output = format_text(result, Thresholds(), hotspots=True)
+
+    assert "Foo.java:1 Foo.Inner#run/0 method 0 -> 1 (delta +1)" in output
 
 
 def test_text_report_hotspots_limit_mentions_details() -> None:
@@ -246,8 +353,8 @@ def test_text_report_hotspots_limit_mentions_details() -> None:
     output = format_text(result, Thresholds(), hotspots=True)
 
     assert "Showing 10 of 11 hotspots. Use --details for the full list." in output
-    assert "Foo#m10/0 method 0 -> 11 (delta +11)" in output
-    assert "Foo#m0/0 method 0 -> 1 (delta +1)" not in output
+    assert "m10/0 method 0 -> 11 (delta +11)" in output
+    assert "m0/0 method 0 -> 1 (delta +1)" not in output
 
 
 def test_text_report_hotspots_without_complexity_changes() -> None:

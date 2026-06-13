@@ -324,9 +324,9 @@ diffcog --hotspots
 
 `--hotspots` prints the normal summary plus up to 10 changed methods or
 constructors with nonzero complexity deltas. Hotspots are sorted by biggest
-absolute complexity change first. Each hotspot includes the file and start line,
-callable name, callable kind, before and after complexity, signed delta, and at
-most one top changed-line rule hint.
+absolute complexity change first. Each hotspot includes a shortened unique file
+suffix and start line, callable name, callable kind, before and after complexity,
+signed delta, and at most one top changed-line rule hint.
 
 `--details` and `--hotspots` are mutually exclusive.
 
