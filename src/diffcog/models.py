@@ -2,11 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from diffcog.languages.java.complexity import ComplexityResult
-    from diffcog.languages.java.models import JavaCallable
+from typing import Any
 
 
 class EndpointKind(str, Enum):
@@ -57,10 +53,42 @@ class SourcePair:
 
 
 @dataclass(frozen=True)
+class CallableSymbol:
+    kind: str
+    name: str
+    namespace_path: list[str]
+    parameter_count: int
+    start_line: int
+    end_line: int
+    node: Any
+
+
+@dataclass(frozen=True)
+class ParsedSnapshot:
+    present: bool
+    parse_error: bool
+    callables: list[CallableSymbol]
+
+
+@dataclass(frozen=True)
+class ComplexityContribution:
+    rule_id: str
+    line: int
+    points: int
+    message: str
+
+
+@dataclass(frozen=True)
+class ComplexityResult:
+    score: int
+    contributions: list[ComplexityContribution]
+
+
+@dataclass(frozen=True)
 class CallableComplexityDelta:
     status: str
-    before_callable: JavaCallable | None
-    after_callable: JavaCallable | None
+    before_callable: CallableSymbol | None
+    after_callable: CallableSymbol | None
     before_result: ComplexityResult | None
     after_result: ComplexityResult | None
     before_score: int
@@ -88,6 +116,7 @@ class AnalysisResult:
     files: list[ChangedFile]
     source_pairs: list[SourcePair]
     ruleset_id: str = "java.default"
+    rule_set_ids: tuple[str, ...] = ("java.default",)
     file_deltas: list[FileComplexityDelta] = field(default_factory=list)
     new_complexity: int = 0
     removed_complexity: int = 0

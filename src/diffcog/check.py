@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 
 
 def main() -> int:
     commands = [
-        ["pytest"],
-        ["ruff", "check", "."],
+        [sys.executable, "-m", "pytest"],
+        [sys.executable, "-m", "ruff", "check", "."],
     ]
 
     for command in commands:

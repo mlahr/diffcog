@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 from tree_sitter import Node
 
-from diffcog.languages.java.models import JavaCallable
+from diffcog.models import CallableSymbol, ComplexityContribution, ComplexityResult
 
 CallableKey = tuple[tuple[str, ...], str, int, str]
 
@@ -13,20 +13,6 @@ CallableKey = tuple[tuple[str, ...], str, int, str]
 @dataclass(frozen=True)
 class ScoringContext:
     nesting: int
-
-
-@dataclass(frozen=True)
-class ComplexityContribution:
-    rule_id: str
-    line: int
-    points: int
-    message: str
-
-
-@dataclass(frozen=True)
-class ComplexityResult:
-    score: int
-    contributions: list[ComplexityContribution]
 
 
 @dataclass(frozen=True)
@@ -78,7 +64,7 @@ def list_ruleset_ids() -> list[str]:
 
 
 def score_callable(
-    callable_: JavaCallable,
+    callable_: CallableSymbol,
     ruleset: RuleSet | None = None,
     semantic_context: JavaSemanticContext | None = None,
 ) -> ComplexityResult:
@@ -95,7 +81,7 @@ def score_callable(
 
 
 def _recursion_contributions(
-    callable_: JavaCallable, semantic_context: JavaSemanticContext
+    callable_: CallableSymbol, semantic_context: JavaSemanticContext
 ) -> list[ComplexityContribution]:
     line = semantic_context.recursive_call_lines.get(_callable_key(callable_))
     if line is None:
@@ -110,9 +96,9 @@ def _recursion_contributions(
     ]
 
 
-def _callable_key(callable_: JavaCallable) -> CallableKey:
+def _callable_key(callable_: CallableSymbol) -> CallableKey:
     return (
-        tuple(callable_.class_path),
+        tuple(callable_.namespace_path),
         callable_.name,
         callable_.parameter_count,
         callable_.kind,

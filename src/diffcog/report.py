@@ -7,7 +7,7 @@ from diffcog.debug_analysis import ComplexityDebugResult, SymbolDebugResult
 from diffcog.models import AnalysisResult, CallableComplexityDelta, LineRange, Thresholds
 
 if TYPE_CHECKING:
-    from diffcog.languages.java.models import JavaCallable
+    from diffcog.models import CallableSymbol
 
 
 HOTSPOT_LIMIT = 10
@@ -21,14 +21,14 @@ def format_text(
 ) -> str:
     lines = [
         f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
-        f"Rule set: {result.ruleset_id}",
+        _format_rule_sets(result.ruleset_id, result.rule_set_ids),
         "",
     ]
 
     if result.files:
-        lines.append(f"Java files changed: {len(result.files)}")
+        lines.append(f"Analyzed files changed: {len(result.files)}")
     else:
-        lines.append("No Java changes found.")
+        lines.append("No supported language changes found.")
 
     lines.extend(
         [
@@ -41,7 +41,7 @@ def format_text(
     if details and result.file_deltas:
         lines.extend(["", *_format_file_delta_details(result.file_deltas)])
     elif details and result.files:
-        lines.extend(["", "Changed Java files:"])
+        lines.extend(["", "Changed analyzed files:"])
         lines.extend(f"  {_format_changed_file(file.status, file.old_path, file.path)}" for file in result.files)
     elif hotspots and result.files:
         lines.extend(["", *_format_hotspots(result.file_deltas)])
@@ -60,6 +60,7 @@ def format_json(result: AnalysisResult, thresholds: Thresholds) -> str:
             "after": result.comparison.after.label,
         },
         "ruleset": result.ruleset_id,
+        "rulesets": list(result.rule_set_ids),
         "files": _json_files_payload(result),
         "new_complexity": result.new_complexity,
         "removed_complexity": result.removed_complexity,
@@ -76,13 +77,13 @@ def format_json(result: AnalysisResult, thresholds: Thresholds) -> str:
 def format_snapshot_text(result: AnalysisResult) -> str:
     lines = [
         f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
-        f"Rule set: {result.ruleset_id}",
+        _format_rule_sets(result.ruleset_id, result.rule_set_ids),
         "",
         "Snapshot dump",
     ]
 
     if not result.source_pairs:
-        lines.extend(["", "No Java changes found."])
+        lines.extend(["", "No supported language changes found."])
         return "\n".join(lines) + "\n"
 
     for pair in result.source_pairs:
@@ -107,6 +108,7 @@ def format_snapshot_json(result: AnalysisResult) -> str:
         },
         "debug": "show-snapshots",
         "ruleset": result.ruleset_id,
+        "rulesets": list(result.rule_set_ids),
         "snapshots": [
             {
                 "status": pair.file.status,
@@ -129,7 +131,7 @@ def format_symbol_text(result: SymbolDebugResult) -> str:
     ]
 
     if not result.files:
-        lines.extend(["", "No Java changes found."])
+        lines.extend(["", "No supported language changes found."])
         return "\n".join(lines) + "\n"
 
     for file in result.files:
@@ -154,6 +156,7 @@ def format_symbol_json(result: SymbolDebugResult) -> str:
         },
         "debug": "show-symbols",
         "ruleset": result.ruleset_id,
+        "rulesets": list(result.rule_set_ids),
         "files": [
             {
                 "status": file.file.status,
@@ -181,13 +184,13 @@ def format_symbol_json(result: SymbolDebugResult) -> str:
 def format_complexity_text(result: ComplexityDebugResult) -> str:
     lines = [
         f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
-        f"Rule set: {result.ruleset_id}",
+        _format_rule_sets(result.ruleset_id, result.rule_set_ids),
         "",
         "Complexity dump",
     ]
 
     if not result.files:
-        lines.extend(["", "No Java changes found."])
+        lines.extend(["", "No supported language changes found."])
         return "\n".join(lines) + "\n"
 
     for file in result.files:
@@ -211,6 +214,7 @@ def format_complexity_json(result: ComplexityDebugResult) -> str:
         },
         "debug": "show-complexity",
         "ruleset": result.ruleset_id,
+        "rulesets": list(result.rule_set_ids),
         "files": [],
     }
     for file in result.files:
@@ -233,6 +237,12 @@ def _format_signed(value: int) -> str:
     if value >= 0:
         return f"+{value}"
     return str(value)
+
+
+def _format_rule_sets(ruleset_id: str, rule_set_ids: tuple[str, ...]) -> str:
+    if len(rule_set_ids) <= 1:
+        return f"Rule set: {ruleset_id}"
+    return f"Rule sets: {', '.join(rule_set_ids)}"
 
 
 def _format_changed_file(status: str, old_path: str, path: str) -> str:
@@ -276,7 +286,7 @@ def _format_file_delta_details(file_deltas: list[Any]) -> list[str]:
         lines.extend(_format_callable_delta_group("added", added, file_delta.file))
         lines.extend(_format_callable_delta_group("removed", removed, file_delta.file))
         if not file_delta.callables:
-            lines.append("  no changed methods/constructors")
+            lines.append("  no changed callables")
         lines.append("")
     if lines and lines[-1] == "":
         lines.pop()
@@ -338,10 +348,10 @@ def _shortest_unique_suffix(path: list[str], all_paths: list[list[str]]) -> str:
     return "/".join(path)
 
 
-def _format_hotspot_callable_signature(callable_: JavaCallable, display_path: str) -> str:
+def _format_hotspot_callable_signature(callable_: "CallableSymbol", display_path: str) -> str:
     filename = display_path.rsplit("/", 1)[-1]
     filename_stem = filename.removesuffix(".java")
-    if callable_.class_path == [filename_stem]:
+    if callable_.namespace_path == [filename_stem]:
         return f"{callable_.name}/{callable_.parameter_count}"
     return _format_callable_signature(callable_)
 
@@ -475,7 +485,7 @@ def _format_symbol_groups(file: Any) -> list[str]:
         lines.extend(f"    {_format_callable(callable_)}" for callable_ in file.removed)
 
     if not lines:
-        lines.append("  no changed methods/constructors")
+        lines.append("  no changed callables")
 
     return lines
 
@@ -485,7 +495,7 @@ def _format_unmapped_lines(
 ) -> list[str]:
     lines = []
     if before_outside or after_outside:
-        lines.append("  changed lines not mapped to methods/constructors:")
+        lines.append("  changed lines not mapped to callables:")
     if before_outside:
         lines.append(f"    before {_format_ranges(before_outside)}")
     if after_outside:
@@ -502,7 +512,7 @@ def _format_complexity_groups(callables: list[Any]) -> list[str]:
             for callable_ in group:
                 lines.extend(_format_complexity_callable(callable_))
     if not lines:
-        lines.append("  no changed methods/constructors")
+        lines.append("  no changed callables")
     return lines
 
 
@@ -535,14 +545,14 @@ def _complexity_payload(callable_: Any) -> dict[str, Any]:
     }
 
 
-def _format_callable_signature(callable_: JavaCallable) -> str:
-    class_prefix = ".".join(callable_.class_path)
-    if class_prefix:
-        return f"{class_prefix}#{callable_.name}/{callable_.parameter_count}"
+def _format_callable_signature(callable_: "CallableSymbol") -> str:
+    namespace_prefix = ".".join(callable_.namespace_path)
+    if namespace_prefix:
+        return f"{namespace_prefix}#{callable_.name}/{callable_.parameter_count}"
     return f"{callable_.name}/{callable_.parameter_count}"
 
 
-def _format_callable(callable_: JavaCallable) -> str:
+def _format_callable(callable_: "CallableSymbol") -> str:
     return (
         f"{_format_callable_signature(callable_)} {callable_.kind} "
         f"lines {callable_.start_line}-{callable_.end_line}"
@@ -550,7 +560,7 @@ def _format_callable(callable_: JavaCallable) -> str:
 
 
 def _symbol_side_payload(
-    *, present: bool, parse_error: bool, callables: list[JavaCallable], outside_ranges: list[LineRange]
+    *, present: bool, parse_error: bool, callables: list["CallableSymbol"], outside_ranges: list[LineRange]
 ) -> dict[str, Any]:
     return {
         "present": present,
@@ -563,11 +573,11 @@ def _symbol_side_payload(
     }
 
 
-def _callable_payload(callable_: JavaCallable) -> dict[str, Any]:
+def _callable_payload(callable_: "CallableSymbol") -> dict[str, Any]:
     return {
         "kind": callable_.kind,
         "name": callable_.name,
-        "class_path": callable_.class_path,
+        "namespace_path": callable_.namespace_path,
         "parameter_count": callable_.parameter_count,
         "start_line": callable_.start_line,
         "end_line": callable_.end_line,

@@ -5,7 +5,7 @@ from functools import lru_cache
 import tree_sitter_java
 from tree_sitter import Language, Node, Parser
 
-from diffcog.languages.java.models import JavaCallable, ParsedSnapshot
+from diffcog.models import CallableSymbol, ParsedSnapshot
 
 
 TYPE_DECLARATIONS = {
@@ -49,23 +49,23 @@ def _parser() -> Parser:
     return parser
 
 
-def _extract_callables(node: Node, class_path: list[str]) -> list[JavaCallable]:
-    next_class_path = class_path
+def _extract_callables(node: Node, namespace_path: list[str]) -> list[CallableSymbol]:
+    next_namespace_path = namespace_path
     if node.type in TYPE_DECLARATIONS:
         name = _node_text(node.child_by_field_name("name"))
         if name is not None:
-            next_class_path = [*class_path, name]
+            next_namespace_path = [*namespace_path, name]
 
-    callables: list[JavaCallable] = []
+    callables: list[CallableSymbol] = []
     kind = CALLABLE_DECLARATIONS.get(node.type)
     if kind is not None:
         callable_name = _node_text(node.child_by_field_name("name"))
         if callable_name is not None:
             callables.append(
-                JavaCallable(
+                CallableSymbol(
                     kind=kind,
                     name=callable_name,
-                    class_path=next_class_path,
+                    namespace_path=next_namespace_path,
                     parameter_count=_parameter_count(node),
                     start_line=node.start_point.row + 1,
                     end_line=node.end_point.row + 1,
@@ -74,7 +74,7 @@ def _extract_callables(node: Node, class_path: list[str]) -> list[JavaCallable]:
             )
 
     for child in node.children:
-        callables.extend(_extract_callables(child, next_class_path))
+        callables.extend(_extract_callables(child, next_namespace_path))
 
     return callables
 

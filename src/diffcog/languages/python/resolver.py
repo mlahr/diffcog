@@ -1,47 +1,93 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 
 from tree_sitter import Node
 
-from diffcog.languages.java.complexity import CallableKey, JavaSemanticContext
 from diffcog.models import CallableSymbol
 from diffcog.selection import callable_key
 
+CallableKey = tuple[tuple[str, ...], str, int, str]
 
-def resolve_semantics(callables: list[CallableSymbol]) -> JavaSemanticContext:
-    method_keys = {
-        callable_key(callable_)
-        for callable_ in callables
-        if callable_.kind == "method"
-    }
+
+@dataclass(frozen=True)
+class PythonSemanticContext:
+    recursive_call_lines: Mapping[CallableKey, int] = field(default_factory=dict)
+
+
+def resolve_semantics(callables: list[CallableSymbol]) -> PythonSemanticContext:
+    callable_keys = {callable_key(callable_) for callable_ in callables}
     edges = {
-        callable_key(callable_): list(_resolved_calls(callable_, method_keys))
+        callable_key(callable_): list(_resolved_calls(callable_, callable_keys))
         for callable_ in callables
-        if callable_.kind == "method"
     }
-    return JavaSemanticContext(recursive_call_lines=_recursive_call_lines(edges))
+    return PythonSemanticContext(recursive_call_lines=_recursive_call_lines(edges))
 
 
 def _resolved_calls(
-    callable_: CallableSymbol, method_keys: set[CallableKey]
+    callable_: CallableSymbol, callable_keys: set[CallableKey]
 ) -> Iterable[tuple[CallableKey, int]]:
-    caller_namespace_path = tuple(callable_.namespace_path)
-    current_class = callable_.namespace_path[-1] if callable_.namespace_path else None
-    for invocation in _descendants(callable_.node, "method_invocation"):
-        name = _node_text(invocation.child_by_field_name("name"))
-        if name is None:
-            continue
-        if not _is_local_qualifier(invocation.child_by_field_name("object"), current_class):
-            continue
-        candidate = (
-            caller_namespace_path,
-            name,
-            _argument_count(invocation.child_by_field_name("arguments")),
+    for call in _descendants(callable_.node, "call"):
+        function = call.child_by_field_name("function")
+        arguments = call.child_by_field_name("arguments")
+        argument_count = _argument_count(arguments)
+        for candidate in _call_candidates(callable_, function, argument_count):
+            if candidate in callable_keys:
+                yield candidate, call.start_point.row + 1
+
+
+def _call_candidates(
+    callable_: CallableSymbol, function: Node | None, argument_count: int
+) -> Iterable[CallableKey]:
+    if function is None:
+        return
+
+    if function.type == "identifier":
+        yield (
+            tuple(callable_.namespace_path),
+            _node_text(function),
+            argument_count,
+            "function",
+        )
+        yield (
+            tuple(callable_.namespace_path),
+            _node_text(function),
+            argument_count,
             "method",
         )
-        if candidate in method_keys:
-            yield candidate, invocation.start_point.row + 1
+        return
+
+    if function.type != "attribute":
+        return
+
+    name = _node_text(function.child_by_field_name("attribute"))
+    object_node = function.child_by_field_name("object")
+    if name is None or not _is_local_method_qualifier(callable_, object_node):
+        return
+
+    yield (
+        tuple(callable_.namespace_path),
+        name,
+        argument_count + 1,
+        "method",
+    )
+
+
+def _is_local_method_qualifier(callable_: CallableSymbol, object_node: Node | None) -> bool:
+    if object_node is None:
+        return False
+    qualifier = _node_text(object_node)
+    if qualifier in {"self", "cls"}:
+        return callable_.kind == "method"
+    current_class = _current_class_name(callable_)
+    return current_class is not None and qualifier == current_class
+
+
+def _current_class_name(callable_: CallableSymbol) -> str | None:
+    if callable_.kind != "method" or not callable_.namespace_path:
+        return None
+    return callable_.namespace_path[-1]
 
 
 def _recursive_call_lines(
@@ -113,14 +159,6 @@ def _strongly_connected_components(edges: dict[CallableKey, list[tuple[CallableK
             connect(key)
 
     return components
-
-
-def _is_local_qualifier(object_node: Node | None, current_class: str | None) -> bool:
-    if object_node is None:
-        return True
-    if object_node.type in {"this", "super"}:
-        return True
-    return current_class is not None and _node_text(object_node) == current_class
 
 
 def _argument_count(arguments: Node | None) -> int:

@@ -64,11 +64,13 @@ Compare the index to unstaged changes only:
 diffcog --unstaged
 ```
 
-Select a built-in Java complexity rule set:
+Select a language or built-in rule set:
 
 ```bash
-diffcog --ruleset java.default
-diffcog --ruleset java.control-flow
+diffcog --language java
+diffcog --language python
+diffcog --language java --ruleset java.default
+diffcog --language python --ruleset python.control-flow
 ```
 
 List available rule sets:
@@ -185,22 +187,42 @@ Uncommitted changes do not affect that result.
 
 ## Rule Sets
 
-The default rule set is:
+The default language mode is:
+
+```text
+auto
+```
+
+Auto mode analyzes Java and Python changes in one run and uses each language's
+default rule set:
 
 ```text
 java.default
+python.default
 ```
 
-Built-in rule sets:
+Built-in Java rule sets:
 
 ```text
 java.default       control flow plus boolean operator chains
 java.control-flow  control flow only
 ```
 
+Built-in Python rule sets:
+
+```text
+python.default       control flow plus boolean operator chains
+python.control-flow  control flow only
+```
+
 Unknown rule set names are usage errors.
 
+`--ruleset` may only be used with an explicit `--language java` or
+`--language python`. Auto mode always uses each language's default rule set.
+
 `--list-rulesets` prints available rule set IDs and exits without reading git state.
+By default it lists all supported languages. With `--language java` or
+`--language python`, it lists only that language's rule sets.
 
 ## Path Filters
 
@@ -213,7 +235,8 @@ diffcog --include 'src/main' --include 'src/test'
 diffcog --exclude '**/generated/**' --exclude 'legacy'
 ```
 
-When no include is provided, all changed tracked Java files are candidates.
+When no include is provided, all changed tracked files for the selected language
+mode are candidates. Auto mode includes tracked `.java` and `.py` files.
 
 When one or more includes are provided, only changed files matching those
 pathspecs are candidates.
@@ -221,7 +244,8 @@ pathspecs are candidates.
 Excludes are applied after includes.
 
 Path filters do not expand language scope. Even if an include pathspec matches
-non-Java files, only tracked `.java` files are analyzed.
+files outside the active language adapter, only tracked files for that adapter
+are analyzed. Auto mode analyzes tracked `.java` and `.py` files only.
 
 ## Why Not Raw Diff As The Main Input?
 
@@ -241,7 +265,7 @@ resolve comparison
   -> get changed files
   -> load before/after source snapshots
   -> parse ASTs
-  -> map changed ranges to methods
+  -> map changed ranges to callables
   -> compute before/after complexity
   -> report delta
 ```
@@ -268,7 +292,7 @@ diffcog --include PATHSPEC
 diffcog --exclude PATHSPEC
 ```
 
-Only Java files are analyzed initially.
+Java and Python files are analyzed initially, through language adapters.
 
 Text output is the default.
 

@@ -1,14 +1,15 @@
 # diffcog
 
-Prototype CLI for measuring cognitive complexity introduced by Java code changes.
+Prototype CLI for measuring cognitive complexity introduced by code changes.
 
-The current implementation analyzes tracked Java changes, maps changed lines to
-methods/constructors, and reports custom cognitive complexity deltas.
+The current implementation analyzes tracked Java and Python changes through
+language adapters, maps changed lines to callables, and reports custom
+cognitive complexity deltas.
 
 ## Install
 
 ```bash
-uv tool install --force -e /path/to/diff-complexity
+uv tool install --force -e /path/to/diffcog
 ```
 
 Then run `diffcog` from any git repository.
@@ -50,7 +51,7 @@ Compare staged changes against unstaged working tree changes:
 diffcog --unstaged
 ```
 
-Show changed Java files:
+Show changed analyzed files:
 
 ```bash
 diffcog --details
@@ -76,10 +77,13 @@ diffcog --exclude '**/generated/**'
 diffcog --include 'src' --exclude '**/generated/**'
 ```
 
-Select a built-in Java rule set:
+Select a language or a built-in rule set:
 
 ```bash
-diffcog --ruleset java.control-flow
+diffcog --language java
+diffcog --language python
+diffcog --language java --ruleset java.control-flow
+diffcog --language python --ruleset python.control-flow
 diffcog --list-rulesets
 ```
 
@@ -89,13 +93,13 @@ Show loaded snapshot metadata:
 diffcog --debug show-snapshots
 ```
 
-Show parsed Java symbols:
+Show parsed callable symbols:
 
 ```bash
 diffcog --debug show-symbols
 ```
 
-Show complexity scoring for changed Java methods/constructors:
+Show complexity scoring for changed callables:
 
 ```bash
 diffcog --debug show-complexity
@@ -118,12 +122,13 @@ Exit codes:
 
 ## Current Scope
 
-- Tracks `.java` files only.
+- Tracks `.java` and `.py` files by default.
+- Uses a language-neutral core pipeline with Java and Python adapters.
 - Supports repeatable git pathspec filters with `--include` and `--exclude`.
 - Uses git refs, index, and working tree states as inputs.
 - Excludes untracked files for now.
-- Reports custom complexity totals for changed Java methods/constructors.
-- Uses `java.default` unless another built-in rule set is selected.
+- Reports custom complexity totals for changed callables.
+- Uses auto mode by default, with `java.default` and `python.default`.
 
 See [CLI.md](CLI.md) for the CLI contract and [BRAINSTORMING.md](BRAINSTORMING.md)
 for design notes.
@@ -139,6 +144,6 @@ uv run diffcog-check
 Run tests or lint separately:
 
 ```bash
-uv run pytest
+uv run python -m pytest
 uv run ruff check .
 ```

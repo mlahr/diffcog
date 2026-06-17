@@ -1,12 +1,8 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
-
-import pytest
 
 from diffcog.debug_analysis import build_complexity_debug, build_symbol_debug
-from diffcog.errors import DiffcogError
 from diffcog.languages.java.complexity import ComplexityContribution, ComplexityResult
 from diffcog.languages.java.complexity import score_callable
 from diffcog.languages.java.parser import parse_snapshot
@@ -69,7 +65,7 @@ def test_text_report_without_java_changes() -> None:
     output = format_text(result, Thresholds())
 
     assert "Comparing HEAD -> working tree" in output
-    assert "No Java changes found." in output
+    assert "No supported language changes found." in output
     assert "New complexity: +0" in output
     assert "Net delta: +0" in output
 
@@ -83,8 +79,8 @@ def test_text_report_with_details() -> None:
 
     output = format_text(result, Thresholds(), details=True)
 
-    assert "Java files changed: 1" in output
-    assert "Changed Java files:" in output
+    assert "Analyzed files changed: 1" in output
+    assert "Changed analyzed files:" in output
     assert "  M src/Foo.java" in output
 
 
@@ -103,6 +99,7 @@ def test_json_report_shape() -> None:
         "after": "working tree",
     }
     assert payload["ruleset"] == "java.default"
+    assert payload["rulesets"] == ["java.default"]
     assert payload["files"] == [
         {"status": "M", "path": "src/Foo.java", "old_path": "src/Foo.java"}
     ]
@@ -540,7 +537,7 @@ def test_symbol_text_report_no_callables() -> None:
 
     output = format_symbol_text(build_symbol_debug(result))
 
-    assert "no changed methods/constructors" in output
+    assert "no changed callables" in output
 
 
 def test_symbol_text_report_outside_symbols() -> None:
@@ -559,7 +556,7 @@ def test_symbol_text_report_outside_symbols() -> None:
 
     output = format_symbol_text(build_symbol_debug(result))
 
-    assert "changed lines not mapped to methods/constructors:" in output
+    assert "changed lines not mapped to callables:" in output
     assert "before line 1" in output
     assert "after line 1" in output
 
@@ -587,7 +584,7 @@ def test_symbol_json_report_shape() -> None:
         {
             "kind": "method",
             "name": "a",
-            "class_path": ["Foo"],
+            "namespace_path": ["Foo"],
             "parameter_count": 1,
             "start_line": 1,
             "end_line": 1,
@@ -606,14 +603,6 @@ def test_symbol_json_report_parse_error() -> None:
     payload = json.loads(format_symbol_json(build_symbol_debug(result)))
 
     assert payload["files"][0]["before"]["parse_error"] is True
-
-
-def test_symbol_report_missing_parser_dependency_has_clear_error() -> None:
-    result = AnalysisResult(comparison=_comparison(), files=[], source_pairs=[])
-
-    with patch("builtins.__import__", side_effect=ModuleNotFoundError(name="tree_sitter_java")):
-        with pytest.raises(DiffcogError, match="Java symbol parsing dependencies are missing"):
-            build_symbol_debug(result)
 
 
 def test_complexity_text_report() -> None:

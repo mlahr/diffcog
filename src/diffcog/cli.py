@@ -3,11 +3,22 @@ from __future__ import annotations
 import argparse
 import sys
 
-from diffcog.analysis import analyze
-from diffcog.debug_analysis import build_complexity_debug, build_symbol_debug
+from diffcog.analysis import analyze, analyze_languages
+from diffcog.debug_analysis import (
+    build_complexity_debug_for_languages,
+    build_language_complexity_debug,
+    build_symbol_debug,
+    build_symbol_debug_for_languages,
+)
 from diffcog.errors import DiffcogError
 from diffcog.git import GitError
-from diffcog.languages.java.complexity import DEFAULT_JAVA_RULESET, get_ruleset, list_ruleset_ids
+from diffcog.languages.registry import (
+    LANGUAGE_ORDER,
+    LanguageSpec,
+    get_language_spec,
+    get_ruleset,
+    list_ruleset_ids,
+)
 from diffcog.models import Comparison, Endpoint, EndpointKind, PathFilter, Thresholds
 from diffcog.report import (
     format_json,
@@ -35,7 +46,7 @@ class DiffcogArgumentParser(argparse.ArgumentParser):
 def build_parser() -> argparse.ArgumentParser:
     parser = DiffcogArgumentParser(
         prog="diffcog",
-        description="Measure cognitive complexity introduced by Java code changes.",
+        description="Measure cognitive complexity introduced by code changes.",
     )
     parser.add_argument("refs", nargs="*", metavar="REF", help="optional BASE and TARGET refs")
     parser.add_argument(
@@ -65,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="exclude changed files matching a git pathspec",
     )
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
+    parser.add_argument(
+        "--language",
+        choices=["auto", "java", "python"],
+        default="auto",
+        help="language to analyze",
+    )
     report_group = parser.add_mutually_exclusive_group()
     report_group.add_argument(
         "--details", action="store_true", help="include changed file details in text output"
@@ -74,13 +91,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--ruleset",
-        default=DEFAULT_JAVA_RULESET.id,
-        help="Java complexity rule set to use",
+        default=None,
+        help="complexity rule set to use with an explicit language",
     )
     parser.add_argument(
         "--list-rulesets",
         action="store_true",
-        help="list available Java complexity rule sets and exit",
+        help="list available complexity rule sets and exit",
     )
     parser.add_argument(
         "--debug",
@@ -97,17 +114,33 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.list_rulesets:
-            print(format_ruleset_list(list_ruleset_ids()), end="")
+            print(format_ruleset_list(_selected_language_specs(args.language)), end="")
             return EXIT_OK
 
-        ruleset = get_ruleset(args.ruleset)
+        language_specs = _selected_language_specs(args.language)
+        if args.language == "auto" and args.ruleset is not None:
+            raise ValueError("--ruleset cannot be used with --language auto")
+
         comparison = resolve_comparison(args.refs, staged=args.staged, unstaged=args.unstaged)
         thresholds = Thresholds(max_new=args.max_new, max_delta=args.max_delta)
         path_filter = PathFilter(includes=tuple(args.include), excludes=tuple(args.exclude))
-        if path_filter.includes or path_filter.excludes:
-            result = analyze(comparison, ruleset=ruleset, path_filter=path_filter)
+
+        if args.language == "auto":
+            ruleset = None
+            result = analyze_languages(
+                comparison,
+                language_specs,
+                path_filter=path_filter if path_filter.includes or path_filter.excludes else None,
+            )
         else:
-            result = analyze(comparison, ruleset=ruleset)
+            language_spec = language_specs[0]
+            ruleset = get_ruleset(language_spec, args.ruleset)
+            result = analyze(
+                comparison,
+                ruleset=ruleset,
+                path_filter=path_filter if path_filter.includes or path_filter.excludes else None,
+                language=language_spec.language,
+            )
     except (ValueError, GitError, DiffcogError) as exc:
         print(f"diffcog: error: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -119,13 +152,21 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(format_snapshot_text(result), end="")
         elif args.debug == "show-symbols":
-            symbol_debug = build_symbol_debug(result)
+            if args.language == "auto":
+                symbol_debug = build_symbol_debug_for_languages(result, language_specs)
+            else:
+                symbol_debug = build_symbol_debug(result, language_specs[0].language)
             if args.json:
                 print(format_symbol_json(symbol_debug), end="")
             else:
                 print(format_symbol_text(symbol_debug), end="")
         elif args.debug == "show-complexity":
-            complexity_debug = build_complexity_debug(result, ruleset)
+            if args.language == "auto":
+                complexity_debug = build_complexity_debug_for_languages(result, language_specs)
+            else:
+                complexity_debug = build_language_complexity_debug(
+                    result, language_specs[0].language, ruleset
+                )
             if args.json:
                 print(format_complexity_json(complexity_debug), end="")
             else:
@@ -198,8 +239,25 @@ def _non_negative_int(value: str) -> int:
     return parsed
 
 
-def format_ruleset_list(ruleset_ids: list[str]) -> str:
-    lines = ["Available Java rule sets:", *[f"  {ruleset_id}" for ruleset_id in ruleset_ids]]
+def _selected_language_specs(language: str) -> tuple[LanguageSpec, ...]:
+    if language == "auto":
+        return LANGUAGE_ORDER
+    return (get_language_spec(language),)
+
+
+def format_ruleset_list(language_specs: tuple[LanguageSpec, ...]) -> str:
+    if len(language_specs) == 1:
+        spec = language_specs[0]
+        lines = [
+            f"Available {spec.display_name} rule sets:",
+            *[f"  {ruleset_id}" for ruleset_id in list_ruleset_ids(spec)],
+        ]
+        return "\n".join(lines) + "\n"
+
+    lines = ["Available rule sets:"]
+    for spec in language_specs:
+        lines.append(f"  {spec.display_name}:")
+        lines.extend(f"    {ruleset_id}" for ruleset_id in list_ruleset_ids(spec))
     return "\n".join(lines) + "\n"
 
 
