@@ -5,7 +5,7 @@ from functools import lru_cache
 import tree_sitter_java
 from tree_sitter import Language, Node, Parser
 
-from diffcog.models import CallableSymbol, ParsedSnapshot
+from diffcog.models import CallableSymbol, ClassSymbol, ParsedSnapshot
 
 
 TYPE_DECLARATIONS = {
@@ -39,6 +39,7 @@ def parse_snapshot(source: str | None) -> ParsedSnapshot:
         present=True,
         parse_error=root.has_error,
         callables=list(_extract_callables(root, [])),
+        classes=list(_extract_classes(root, [])),
     )
 
 
@@ -77,6 +78,30 @@ def _extract_callables(node: Node, namespace_path: list[str]) -> list[CallableSy
         callables.extend(_extract_callables(child, next_namespace_path))
 
     return callables
+
+
+def _extract_classes(node: Node, namespace_path: list[str]) -> list[ClassSymbol]:
+    classes: list[ClassSymbol] = []
+    next_namespace_path = namespace_path
+    if node.type in TYPE_DECLARATIONS:
+        name = _node_text(node.child_by_field_name("name"))
+        if name is not None:
+            next_namespace_path = [*namespace_path, name]
+            classes.append(
+                ClassSymbol(
+                    name=name,
+                    namespace_path=next_namespace_path,
+                    kind=node.type.removesuffix("_declaration"),
+                    start_line=node.start_point.row + 1,
+                    end_line=node.end_point.row + 1,
+                    node=node,
+                )
+            )
+
+    for child in node.children:
+        classes.extend(_extract_classes(child, next_namespace_path))
+
+    return classes
 
 
 def _parameter_count(node: Node) -> int:

@@ -160,6 +160,47 @@ def test_auto_language_json_includes_rulesets(
     assert [file["language"] for file in payload["files"]] == ["java", "python"]
 
 
+def test_auto_language_ck_metrics_report_includes_java_and_python(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { Bar bar; void run() { bar.go(); } }\n")
+    write(
+        tmp_path,
+        "src/app.py",
+        "from pkg import Client\n"
+        "class Service:\n"
+        "    def __init__(self, client: Client):\n"
+        "        self.client = client\n",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--metrics", "ck"]) == EXIT_OK
+
+    output = capsys.readouterr().out
+    assert "CK metrics" in output
+    assert "M src/Foo.java" in output
+    assert "modified: Foo class" in output
+    assert "M src/app.py" in output
+    assert "added: Service class" in output
+
+
+def test_auto_language_ck_metrics_json(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { Bar bar; void run() { bar.go(); } }\n")
+    write(tmp_path, "src/app.py", "class Service:\n    def run(self):\n        return self.value\n")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--metrics", "ck", "--json"]) == EXIT_OK
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["metrics"] == "ck"
+    assert [file["language"] for file in payload["files"]] == ["java", "python"]
+    assert [file["classes"][0]["name"] for file in payload["files"]] == ["Foo", "Service"]
+
+
 def test_explicit_language_json_includes_language(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:

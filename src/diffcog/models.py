@@ -65,10 +65,21 @@ class CallableSymbol:
 
 
 @dataclass(frozen=True)
+class ClassSymbol:
+    name: str
+    namespace_path: list[str]
+    kind: str
+    start_line: int
+    end_line: int
+    node: Any
+
+
+@dataclass(frozen=True)
 class ParsedSnapshot:
     present: bool
     parse_error: bool
     callables: list[CallableSymbol]
+    classes: list[ClassSymbol] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -106,6 +117,63 @@ class FileComplexityDelta:
 
 
 @dataclass(frozen=True)
+class ClassMetrics:
+    cbo: int
+    lcom: int
+    wmc: int
+
+
+@dataclass(frozen=True)
+class ClassMetricsDelta:
+    status: str
+    before_class: ClassSymbol | None
+    after_class: ClassSymbol | None
+    before_metrics: ClassMetrics | None
+    after_metrics: ClassMetrics | None
+    delta: ClassMetrics
+
+
+@dataclass(frozen=True)
+class FileClassMetricsDelta:
+    file: ChangedFile
+    before_present: bool
+    after_present: bool
+    before_parse_error: bool
+    after_parse_error: bool
+    classes: list[ClassMetricsDelta]
+
+
+@dataclass(frozen=True)
+class HistoryHotspot:
+    path: str
+    language_id: str
+    commit_count: int
+    changed_lines: int
+    current_complexity: int
+    score: int
+
+
+@dataclass(frozen=True)
+class ChangeCoupling:
+    left_path: str
+    right_path: str
+    shared_commit_count: int
+    left_commit_count: int
+    right_commit_count: int
+    coupling_percent: int
+
+
+@dataclass(frozen=True)
+class HistoryMetricsResult:
+    comparison: Comparison
+    history_ref: str
+    days: int
+    language_ids: tuple[str, ...]
+    hotspots: list[HistoryHotspot]
+    change_couplings: list[ChangeCoupling]
+
+
+@dataclass(frozen=True)
 class Thresholds:
     max_new: int | None = None
     max_delta: int | None = None
@@ -119,6 +187,7 @@ class AnalysisResult:
     ruleset_id: str = "java.default"
     rule_set_ids: tuple[str, ...] = ("java.default",)
     file_deltas: list[FileComplexityDelta] = field(default_factory=list)
+    class_metric_deltas: list[FileClassMetricsDelta] = field(default_factory=list)
     new_complexity: int = 0
     removed_complexity: int = 0
     net_delta: int = 0

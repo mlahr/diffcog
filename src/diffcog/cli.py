@@ -12,6 +12,7 @@ from diffcog.debug_analysis import (
 )
 from diffcog.errors import DiffcogError
 from diffcog.git import GitError
+from diffcog.history import DEFAULT_HISTORY_DAYS, analyze_history_metrics
 from diffcog.languages.registry import (
     LANGUAGE_ORDER,
     LanguageSpec,
@@ -21,6 +22,10 @@ from diffcog.languages.registry import (
 )
 from diffcog.models import Comparison, Endpoint, EndpointKind, PathFilter, Thresholds
 from diffcog.report import (
+    format_ck_metrics_json,
+    format_ck_metrics_text,
+    format_history_metrics_json,
+    format_history_metrics_text,
     format_json,
     format_complexity_json,
     format_complexity_text,
@@ -90,6 +95,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--hotspots", action="store_true", help="show top complexity hotspots in text output"
     )
     parser.add_argument(
+        "--metrics",
+        choices=["ck", "history"],
+        default=None,
+        help="show an alternate metric report",
+    )
+    parser.add_argument(
+        "--history-days",
+        type=_positive_int,
+        default=DEFAULT_HISTORY_DAYS,
+        help="number of recent days to mine for --metrics history",
+    )
+    parser.add_argument(
         "--ruleset",
         default=None,
         help="complexity rule set to use with an explicit language",
@@ -113,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        _validate_report_mode(args)
         if args.list_rulesets:
             print(format_ruleset_list(_selected_language_specs(args.language)), end="")
             return EXIT_OK
@@ -125,7 +143,15 @@ def main(argv: list[str] | None = None) -> int:
         thresholds = Thresholds(max_new=args.max_new, max_delta=args.max_delta)
         path_filter = PathFilter(includes=tuple(args.include), excludes=tuple(args.exclude))
 
-        if args.language == "auto":
+        if args.metrics == "history":
+            result = analyze_history_metrics(
+                comparison,
+                language_specs,
+                days=args.history_days,
+                path_filter=path_filter if path_filter.includes or path_filter.excludes else None,
+            )
+            thresholds = Thresholds()
+        elif args.language == "auto":
             ruleset = None
             result = analyze_languages(
                 comparison,
@@ -146,7 +172,17 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_ERROR
 
     try:
-        if args.debug == "show-snapshots":
+        if args.metrics == "ck":
+            if args.json:
+                print(format_ck_metrics_json(result), end="")
+            else:
+                print(format_ck_metrics_text(result), end="")
+        elif args.metrics == "history":
+            if args.json:
+                print(format_history_metrics_json(result), end="")
+            else:
+                print(format_history_metrics_text(result), end="")
+        elif args.debug == "show-snapshots":
             if args.json:
                 print(format_snapshot_json(result), end="")
             else:
@@ -179,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"diffcog: error: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
-    if result.threshold_failed(thresholds):
+    if hasattr(result, "threshold_failed") and result.threshold_failed(thresholds):
         return EXIT_THRESHOLD
     return EXIT_OK
 
@@ -239,10 +275,39 @@ def _non_negative_int(value: str) -> int:
     return parsed
 
 
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def _selected_language_specs(language: str) -> tuple[LanguageSpec, ...]:
     if language == "auto":
         return LANGUAGE_ORDER
     return (get_language_spec(language),)
+
+
+def _validate_report_mode(args: argparse.Namespace) -> None:
+    if args.metrics is None:
+        if args.history_days != DEFAULT_HISTORY_DAYS:
+            raise ValueError("--history-days can only be used with --metrics history")
+        return
+    if args.details:
+        raise ValueError("--metrics cannot be combined with --details")
+    if args.hotspots:
+        raise ValueError("--metrics cannot be combined with --hotspots")
+    if args.debug is not None:
+        raise ValueError("--metrics cannot be combined with --debug")
+    if args.list_rulesets:
+        raise ValueError("--metrics cannot be combined with --list-rulesets")
+    if args.ruleset is not None:
+        raise ValueError("--metrics cannot be combined with --ruleset")
+    if args.metrics != "history" and args.history_days != DEFAULT_HISTORY_DAYS:
+        raise ValueError("--history-days can only be used with --metrics history")
 
 
 def format_ruleset_list(language_specs: tuple[LanguageSpec, ...]) -> str:

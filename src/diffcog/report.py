@@ -4,13 +4,20 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from diffcog.debug_analysis import ComplexityDebugResult, SymbolDebugResult
-from diffcog.models import AnalysisResult, CallableComplexityDelta, LineRange, Thresholds
+from diffcog.models import (
+    AnalysisResult,
+    CallableComplexityDelta,
+    HistoryMetricsResult,
+    LineRange,
+    Thresholds,
+)
 
 if TYPE_CHECKING:
     from diffcog.models import CallableSymbol
 
 
 HOTSPOT_LIMIT = 10
+HISTORY_LIMIT = 10
 
 
 def format_text(
@@ -70,6 +77,183 @@ def format_json(result: AnalysisResult, thresholds: Thresholds) -> str:
             "max_delta": thresholds.max_delta,
         },
         "threshold_failed": result.threshold_failed(thresholds),
+    }
+    return json.dumps(payload, indent=2, sort_keys=False) + "\n"
+
+
+def format_ck_metrics_text(result: AnalysisResult) -> str:
+    totals = _ck_totals(result)
+    lines = [
+        f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
+        "",
+        "CK metrics",
+        "CBO = external type coupling; LCOM = lack of shared instance-field use; WMC = instance method count",
+        f"Old totals: CBO {totals['old']['cbo']}, LCOM {totals['old']['lcom']}, WMC {totals['old']['wmc']}",
+        f"New totals: CBO {totals['new']['cbo']}, LCOM {totals['new']['lcom']}, WMC {totals['new']['wmc']}",
+        "Delta totals: "
+        f"CBO {_format_signed(totals['delta']['cbo'])}, "
+        f"LCOM {_format_signed(totals['delta']['lcom'])}, "
+        f"WMC {_format_signed(totals['delta']['wmc'])}",
+    ]
+
+    if not result.class_metric_deltas:
+        lines.extend(["", "No supported language changes found."])
+        return "\n".join(lines) + "\n"
+
+    for file_delta in _reportable_ck_files(result):
+        lines.extend(
+            [
+                "",
+                _format_changed_file(
+                    file_delta.file.status, file_delta.file.old_path, file_delta.file.path
+                ),
+            ]
+        )
+        if file_delta.before_parse_error:
+            lines.append("  before parse error")
+        if file_delta.after_parse_error:
+            lines.append("  after parse error")
+        for class_delta in _reportable_ck_classes(file_delta):
+            class_ = class_delta.after_class or class_delta.before_class
+            lines.append(f"  {class_delta.status}: {_format_class_signature(class_)} {class_.kind}")
+            lines.append(
+                "    CBO "
+                f"{_metric_value(class_delta.before_metrics, 'cbo')} -> "
+                f"{_metric_value(class_delta.after_metrics, 'cbo')} "
+                f"(delta {_format_signed(class_delta.delta.cbo)})"
+            )
+            lines.append(
+                "    LCOM "
+                f"{_metric_value(class_delta.before_metrics, 'lcom')} -> "
+                f"{_metric_value(class_delta.after_metrics, 'lcom')} "
+                f"(delta {_format_signed(class_delta.delta.lcom)})"
+            )
+            lines.append(
+                "    WMC "
+                f"{_metric_value(class_delta.before_metrics, 'wmc')} -> "
+                f"{_metric_value(class_delta.after_metrics, 'wmc')} "
+                f"(delta {_format_signed(class_delta.delta.wmc)})"
+            )
+
+    if len(lines) == 7:
+        lines.extend(["", "No CK metric changes found."])
+
+    return "\n".join(lines) + "\n"
+
+
+def format_ck_metrics_json(result: AnalysisResult) -> str:
+    payload: dict[str, Any] = {
+        "comparison": {
+            "mode": result.comparison.mode,
+            "before": result.comparison.before.label,
+            "after": result.comparison.after.label,
+        },
+        "metrics": "ck",
+        "totals": _ck_totals(result),
+        "files": [
+            {
+                "status": file_delta.file.status,
+                "path": file_delta.file.path,
+                "old_path": file_delta.file.old_path,
+                "language": file_delta.file.language_id,
+                "before": {
+                    "present": file_delta.before_present,
+                    "parse_error": file_delta.before_parse_error,
+                },
+                "after": {
+                    "present": file_delta.after_present,
+                    "parse_error": file_delta.after_parse_error,
+                },
+                "classes": [
+                    {
+                        "status": class_delta.status,
+                        **_class_payload(class_delta.after_class or class_delta.before_class),
+                        "before": _class_metrics_payload(class_delta.before_metrics),
+                        "after": _class_metrics_payload(class_delta.after_metrics),
+                        "delta": _class_metrics_payload(class_delta.delta),
+                    }
+                    for class_delta in _reportable_ck_classes(file_delta)
+                ],
+            }
+            for file_delta in _reportable_ck_files(result)
+        ],
+    }
+    return json.dumps(payload, indent=2, sort_keys=False) + "\n"
+
+
+def format_history_metrics_text(result: HistoryMetricsResult) -> str:
+    lines = [
+        f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
+        f"History window: last {result.days} days from {result.history_ref}",
+        f"Languages: {', '.join(result.language_ids)}",
+        "",
+        "History hotspots",
+    ]
+
+    if result.hotspots:
+        for hotspot in result.hotspots[:HISTORY_LIMIT]:
+            lines.append(
+                f"  {hotspot.path} [{hotspot.language_id}] "
+                f"score {hotspot.score}, complexity {hotspot.current_complexity}, "
+                f"commits {hotspot.commit_count}, changed lines {hotspot.changed_lines}"
+            )
+        if len(result.hotspots) > HISTORY_LIMIT:
+            lines.append(f"Showing {HISTORY_LIMIT} of {len(result.hotspots)} hotspots.")
+    else:
+        lines.append("  No history hotspots found.")
+
+    lines.extend(["", "Change coupling"])
+    if result.change_couplings:
+        for coupling in result.change_couplings[:HISTORY_LIMIT]:
+            lines.append(
+                f"  {coupling.left_path} <-> {coupling.right_path}: "
+                f"{coupling.shared_commit_count} shared commits, "
+                f"{coupling.coupling_percent}% coupling "
+                f"({coupling.left_commit_count}/{coupling.right_commit_count} commits)"
+            )
+        if len(result.change_couplings) > HISTORY_LIMIT:
+            lines.append(f"Showing {HISTORY_LIMIT} of {len(result.change_couplings)} pairs.")
+    else:
+        lines.append("  No change coupling pairs found.")
+
+    return "\n".join(lines) + "\n"
+
+
+def format_history_metrics_json(result: HistoryMetricsResult) -> str:
+    payload: dict[str, Any] = {
+        "comparison": {
+            "mode": result.comparison.mode,
+            "before": result.comparison.before.label,
+            "after": result.comparison.after.label,
+        },
+        "metrics": "history",
+        "history": {
+            "ref": result.history_ref,
+            "days": result.days,
+            "languages": list(result.language_ids),
+        },
+        "hotspots": [
+            {
+                "path": hotspot.path,
+                "language": hotspot.language_id,
+                "commit_count": hotspot.commit_count,
+                "changed_lines": hotspot.changed_lines,
+                "current_complexity": hotspot.current_complexity,
+                "score": hotspot.score,
+            }
+            for hotspot in result.hotspots
+        ],
+        "change_coupling": [
+            {
+                "left_path": coupling.left_path,
+                "right_path": coupling.right_path,
+                "shared_commit_count": coupling.shared_commit_count,
+                "left_commit_count": coupling.left_commit_count,
+                "right_commit_count": coupling.right_commit_count,
+                "coupling_percent": coupling.coupling_percent,
+            }
+            for coupling in result.change_couplings
+        ],
     }
     return json.dumps(payload, indent=2, sort_keys=False) + "\n"
 
@@ -242,10 +426,45 @@ def _format_signed(value: int) -> str:
     return str(value)
 
 
+def _reportable_ck_files(result: AnalysisResult) -> list[Any]:
+    return [
+        file_delta
+        for file_delta in result.class_metric_deltas
+        if file_delta.before_parse_error
+        or file_delta.after_parse_error
+        or _reportable_ck_classes(file_delta)
+    ]
+
+
+def _reportable_ck_classes(file_delta: Any) -> list[Any]:
+    return [class_delta for class_delta in file_delta.classes if class_delta.status != "unchanged"]
+
+
+def _ck_totals(result: AnalysisResult) -> dict[str, dict[str, int]]:
+    totals = {
+        "old": {"cbo": 0, "lcom": 0, "wmc": 0},
+        "new": {"cbo": 0, "lcom": 0, "wmc": 0},
+        "delta": {"cbo": 0, "lcom": 0, "wmc": 0},
+    }
+    for file_delta in _reportable_ck_files(result):
+        for class_delta in _reportable_ck_classes(file_delta):
+            for metric in ("cbo", "lcom", "wmc"):
+                totals["old"][metric] += _metric_value(class_delta.before_metrics, metric)
+                totals["new"][metric] += _metric_value(class_delta.after_metrics, metric)
+                totals["delta"][metric] += getattr(class_delta.delta, metric)
+    return totals
+
+
 def _format_rule_sets(ruleset_id: str, rule_set_ids: tuple[str, ...]) -> str:
     if len(rule_set_ids) <= 1:
         return f"Rule set: {ruleset_id}"
     return f"Rule sets: {', '.join(rule_set_ids)}"
+
+
+def _metric_value(metrics: Any | None, name: str) -> int:
+    if metrics is None:
+        return 0
+    return getattr(metrics, name)
 
 
 def _format_changed_file(status: str, old_path: str, path: str) -> str:
@@ -623,6 +842,30 @@ def _callable_payload(callable_: "CallableSymbol") -> dict[str, Any]:
         "parameter_count": callable_.parameter_count,
         "start_line": callable_.start_line,
         "end_line": callable_.end_line,
+    }
+
+
+def _format_class_signature(class_: Any) -> str:
+    return ".".join(class_.namespace_path)
+
+
+def _class_payload(class_: Any) -> dict[str, Any]:
+    return {
+        "kind": class_.kind,
+        "name": class_.name,
+        "namespace_path": class_.namespace_path,
+        "start_line": class_.start_line,
+        "end_line": class_.end_line,
+    }
+
+
+def _class_metrics_payload(metrics: Any | None) -> dict[str, int] | None:
+    if metrics is None:
+        return None
+    return {
+        "cbo": metrics.cbo,
+        "lcom": metrics.lcom,
+        "wmc": metrics.wmc,
     }
 
 

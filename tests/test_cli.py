@@ -81,6 +81,41 @@ def test_hotspots_parses() -> None:
     assert args.hotspots is True
 
 
+def test_metrics_ck_parses() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["--metrics", "ck"])
+
+    assert args.metrics == "ck"
+
+
+def test_metrics_history_parses() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["--metrics", "history", "--history-days", "30"])
+
+    assert args.metrics == "history"
+    assert args.history_days == 30
+
+
+def test_history_days_must_be_positive() -> None:
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["--metrics", "history", "--history-days", "0"])
+
+    assert exc.value.code == EXIT_ERROR
+
+
+def test_unknown_metrics_mode_exits_with_error() -> None:
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["--metrics", "raw"])
+
+    assert exc.value.code == EXIT_ERROR
+
+
 def test_language_defaults_to_auto() -> None:
     parser = build_parser()
 
@@ -165,6 +200,30 @@ def test_details_and_hotspots_are_mutually_exclusive() -> None:
         parser.parse_args(["--details", "--hotspots"])
 
     assert exc.value.code == EXIT_ERROR
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--metrics", "ck", "--details"],
+        ["--metrics", "ck", "--hotspots"],
+        ["--metrics", "ck", "--debug", "show-symbols"],
+        ["--metrics", "ck", "--list-rulesets"],
+        ["--metrics", "ck", "--language", "java", "--ruleset", "java.default"],
+    ],
+)
+def test_metrics_ck_rejects_other_report_modes(args: list[str], capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(args) == EXIT_ERROR
+
+    assert "--metrics cannot be combined" in capsys.readouterr().err
+
+
+def test_history_days_without_history_metrics_is_rejected(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["--history-days", "30"]) == EXIT_ERROR
+
+    assert "--history-days can only be used with --metrics history" in capsys.readouterr().err
 
 
 def test_debug_show_snapshots_parses() -> None:

@@ -7,9 +7,12 @@ from diffcog.languages.java.complexity import ComplexityContribution, Complexity
 from diffcog.languages.java.complexity import score_callable
 from diffcog.languages.java.parser import parse_snapshot
 from diffcog.models import AnalysisResult, ChangedFile, Comparison, Endpoint, EndpointKind, LineRange, Thresholds
-from diffcog.models import CallableComplexityDelta, FileComplexityDelta
+from diffcog.models import CallableComplexityDelta, ClassMetrics, ClassMetricsDelta
+from diffcog.models import FileClassMetricsDelta, FileComplexityDelta
 from diffcog.models import SourcePair
 from diffcog.report import (
+    format_ck_metrics_json,
+    format_ck_metrics_text,
     format_json,
     format_complexity_json,
     format_complexity_text,
@@ -649,3 +652,184 @@ def test_complexity_json_report_shape() -> None:
     assert payload["files"][0]["callables"][0]["status"] == "added"
     assert payload["files"][0]["callables"][0]["score"] == 1
     assert payload["files"][0]["callables"][0]["contributions"][0]["rule_id"] == "java.if"
+
+
+def test_ck_metrics_text_report() -> None:
+    file = _file()
+    before_class = parse_snapshot("class Foo { void a() {} }\n").classes[0]
+    after_class = parse_snapshot("class Foo { Bar bar; void a() { bar.go(); } }\n").classes[0]
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[file],
+        source_pairs=[],
+        class_metric_deltas=[
+            FileClassMetricsDelta(
+                file=file,
+                before_present=True,
+                after_present=True,
+                before_parse_error=False,
+                after_parse_error=False,
+                classes=[
+                    ClassMetricsDelta(
+                        status="modified",
+                        before_class=before_class,
+                        after_class=after_class,
+                        before_metrics=ClassMetrics(cbo=0, lcom=0, wmc=1),
+                        after_metrics=ClassMetrics(cbo=1, lcom=0, wmc=1),
+                        delta=ClassMetrics(cbo=1, lcom=0, wmc=0),
+                    )
+                ],
+            )
+        ],
+    )
+
+    output = format_ck_metrics_text(result)
+
+    assert "CK metrics" in output
+    assert (
+        "CBO = external type coupling; LCOM = lack of shared instance-field use; "
+        "WMC = instance method count"
+    ) in output
+    assert "M src/Foo.java" in output
+    assert "Old totals: CBO 0, LCOM 0, WMC 1" in output
+    assert "New totals: CBO 1, LCOM 0, WMC 1" in output
+    assert "Delta totals: CBO +1, LCOM +0, WMC +0" in output
+    assert "modified: Foo class" in output
+    assert "CBO 0 -> 1 (delta +1)" in output
+    assert "LCOM 0 -> 0 (delta +0)" in output
+    assert "WMC 1 -> 1 (delta +0)" in output
+
+
+def test_ck_metrics_json_report_shape() -> None:
+    file = _file()
+    class_ = parse_snapshot("class Foo { void a() {} }\n").classes[0]
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[file],
+        source_pairs=[],
+        class_metric_deltas=[
+            FileClassMetricsDelta(
+                file=file,
+                before_present=False,
+                after_present=True,
+                before_parse_error=False,
+                after_parse_error=False,
+                classes=[
+                    ClassMetricsDelta(
+                        status="added",
+                        before_class=None,
+                        after_class=class_,
+                        before_metrics=None,
+                        after_metrics=ClassMetrics(cbo=0, lcom=0, wmc=1),
+                        delta=ClassMetrics(cbo=0, lcom=0, wmc=1),
+                    )
+                ],
+            )
+        ],
+    )
+
+    payload = json.loads(format_ck_metrics_json(result))
+
+    assert payload["metrics"] == "ck"
+    assert payload["totals"] == {
+        "old": {"cbo": 0, "lcom": 0, "wmc": 0},
+        "new": {"cbo": 0, "lcom": 0, "wmc": 1},
+        "delta": {"cbo": 0, "lcom": 0, "wmc": 1},
+    }
+    assert payload["files"][0]["classes"][0]["status"] == "added"
+    assert payload["files"][0]["classes"][0]["after"] == {"cbo": 0, "lcom": 0, "wmc": 1}
+    assert payload["files"][0]["classes"][0]["delta"] == {"cbo": 0, "lcom": 0, "wmc": 1}
+
+
+def test_ck_metrics_text_report_suppresses_unchanged_and_no_class_files() -> None:
+    unchanged_class = parse_snapshot("class Foo {}\n").classes[0]
+    class_file = _file(path="src/Foo.java")
+    no_class_file = _file(path="src/package-info.java")
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[class_file, no_class_file],
+        source_pairs=[],
+        class_metric_deltas=[
+            FileClassMetricsDelta(
+                file=class_file,
+                before_present=True,
+                after_present=True,
+                before_parse_error=False,
+                after_parse_error=False,
+                classes=[
+                    ClassMetricsDelta(
+                        status="unchanged",
+                        before_class=unchanged_class,
+                        after_class=unchanged_class,
+                        before_metrics=ClassMetrics(cbo=0, lcom=0, wmc=0),
+                        after_metrics=ClassMetrics(cbo=0, lcom=0, wmc=0),
+                        delta=ClassMetrics(cbo=0, lcom=0, wmc=0),
+                    )
+                ],
+            ),
+            FileClassMetricsDelta(
+                file=no_class_file,
+                before_present=True,
+                after_present=True,
+                before_parse_error=False,
+                after_parse_error=False,
+                classes=[],
+            ),
+        ],
+    )
+
+    output = format_ck_metrics_text(result)
+
+    assert "unchanged" not in output
+    assert "no classes" not in output
+    assert "src/Foo.java" not in output
+    assert "src/package-info.java" not in output
+    assert "Old totals: CBO 0, LCOM 0, WMC 0" in output
+    assert "New totals: CBO 0, LCOM 0, WMC 0" in output
+    assert "Delta totals: CBO +0, LCOM +0, WMC +0" in output
+    assert "No CK metric changes found." in output
+
+
+def test_ck_metrics_json_report_suppresses_unchanged_and_no_class_files() -> None:
+    unchanged_class = parse_snapshot("class Foo {}\n").classes[0]
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[],
+        source_pairs=[],
+        class_metric_deltas=[
+            FileClassMetricsDelta(
+                file=_file(path="src/Foo.java"),
+                before_present=True,
+                after_present=True,
+                before_parse_error=False,
+                after_parse_error=False,
+                classes=[
+                    ClassMetricsDelta(
+                        status="unchanged",
+                        before_class=unchanged_class,
+                        after_class=unchanged_class,
+                        before_metrics=ClassMetrics(cbo=0, lcom=0, wmc=0),
+                        after_metrics=ClassMetrics(cbo=0, lcom=0, wmc=0),
+                        delta=ClassMetrics(cbo=0, lcom=0, wmc=0),
+                    )
+                ],
+            ),
+            FileClassMetricsDelta(
+                file=_file(path="src/package-info.java"),
+                before_present=True,
+                after_present=True,
+                before_parse_error=False,
+                after_parse_error=False,
+                classes=[],
+            ),
+        ],
+    )
+
+    payload = json.loads(format_ck_metrics_json(result))
+
+    assert payload["totals"] == {
+        "old": {"cbo": 0, "lcom": 0, "wmc": 0},
+        "new": {"cbo": 0, "lcom": 0, "wmc": 0},
+        "delta": {"cbo": 0, "lcom": 0, "wmc": 0},
+    }
+    assert payload["files"] == []

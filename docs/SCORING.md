@@ -7,6 +7,9 @@ the before and after source states.
 introduced complexity = complexity(after) - complexity(before)
 ```
 
+CK metrics are a separate class-level metric family. They are not cognitive
+complexity scores and do not use cognitive complexity rule sets.
+
 Contribution lines explain which rules contributed to a callable score. They are
 not a separate scoring model.
 
@@ -115,3 +118,48 @@ Python exclusions and limits:
 - Lambdas are not reported as separate callables and do not score directly.
 - `case` clauses, comprehension `for` / `if` clauses, `try else`, and `finally`
   do not score directly.
+
+## CK metrics
+
+`--metrics ck` reports class-level `CBO`, `LCOM`, and `WMC` values for classes in
+tracked changed files.
+
+- `WMC` is the count of participating instance methods. Java constructors count;
+  Java static methods, Python static methods, and Python class methods do not.
+- `LCOM` uses the original CK pair-count definition over participating instance
+  methods and the instance fields they access. If every participating method uses
+  no instance fields, `LCOM` is `0`.
+- `CBO` counts unique statically visible external classes or types coupled to a
+  class. Built-in/core types and self references are excluded.
+
+Java `CBO` counts superclass and interface types, field types, parameter types,
+return types, thrown types, local variable types, generic type arguments,
+annotations, and object creation types.
+
+Python `CBO` counts base classes, annotations, imported constructor-style calls,
+and statically nameable `self.field.method(...)` dependencies when the field can
+be connected to a visible annotated type. It does not perform type checking or
+whole-project import resolution.
+
+## History Metrics
+
+`--metrics history` reports file-level history metrics inspired by Adam
+Tornhill's hotspot and change-coupling algorithms. This metric is separate from
+callable cognitive complexity deltas and CK class metrics.
+
+Hotspot score:
+
+```text
+current file cognitive complexity * recent commit count
+```
+
+Current file cognitive complexity is the sum of callable cognitive complexity in
+the resolved `after` side of the comparison. Recent commit count comes from the
+selected git history window, defaulting to the last 90 days.
+
+Change coupling includes file pairs that changed together in at least two
+commits. Coupling percentage is:
+
+```text
+shared commits / min(left file commits, right file commits) * 100
+```

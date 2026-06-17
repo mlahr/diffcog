@@ -5,7 +5,7 @@ from functools import lru_cache
 import tree_sitter_python
 from tree_sitter import Language, Node, Parser
 
-from diffcog.models import CallableSymbol, ParsedSnapshot
+from diffcog.models import CallableSymbol, ClassSymbol, ParsedSnapshot
 
 
 PARAMETER_NODE_TYPES = {
@@ -29,6 +29,7 @@ def parse_snapshot(source: str | None) -> ParsedSnapshot:
         present=True,
         parse_error=root.has_error,
         callables=list(_extract_callables(root, [])),
+        classes=list(_extract_classes(root, [])),
     )
 
 
@@ -76,6 +77,31 @@ def _extract_child_callables(node: Node, containers: list[tuple[str, str]]) -> l
     for child in node.children:
         callables.extend(_extract_callables(child, containers))
     return callables
+
+
+def _extract_classes(node: Node, containers: list[tuple[str, str]]) -> list[ClassSymbol]:
+    node = _definition_node(node)
+    classes: list[ClassSymbol] = []
+    next_containers = containers
+    if node.type == "class_definition":
+        class_name = _node_text(node.child_by_field_name("name"))
+        if class_name is not None:
+            next_containers = [*containers, ("class", class_name)]
+            classes.append(
+                ClassSymbol(
+                    name=class_name,
+                    namespace_path=[name for _kind, name in next_containers],
+                    kind="class",
+                    start_line=node.start_point.row + 1,
+                    end_line=node.end_point.row + 1,
+                    node=node,
+                )
+            )
+
+    for child in node.children:
+        classes.extend(_extract_classes(child, next_containers))
+
+    return classes
 
 
 def _definition_node(node: Node) -> Node:

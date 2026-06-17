@@ -63,6 +63,19 @@ Show top complexity hotspots:
 diffcog --hotspots
 ```
 
+Show CK class metrics:
+
+```bash
+diffcog --metrics ck
+```
+
+Show Tornhill-style history metrics:
+
+```bash
+diffcog --metrics history
+diffcog --metrics history --history-days 30
+```
+
 Print JSON:
 
 ```bash
@@ -128,6 +141,9 @@ Exit codes:
 - Uses git refs, index, and working tree states as inputs.
 - Excludes untracked files for now.
 - Reports custom complexity totals for changed callables.
+- Reports CK `CBO`, `LCOM`, and `WMC` class metrics with `--metrics ck`.
+- Reports file-level Tornhill-style history hotspots and change coupling with
+  `--metrics history`.
 - Uses auto mode by default, with `java.default` and `python.default`.
 
 See [CLI.md](CLI.md) for the CLI contract, [docs/SCORING.md](docs/SCORING.md)

@@ -79,6 +79,21 @@ List available rule sets:
 diffcog --list-rulesets
 ```
 
+Show CK class metrics:
+
+```bash
+diffcog --metrics ck
+diffcog --metrics ck --json
+```
+
+Show Tornhill-style history metrics:
+
+```bash
+diffcog --metrics history
+diffcog --metrics history --history-days 30
+diffcog --metrics history --json
+```
+
 Limit analysis to matching paths:
 
 ```bash
@@ -225,6 +240,75 @@ By default it lists all supported languages. With `--language java` or
 `--language python`, it lists only that language's rule sets.
 
 See [docs/SCORING.md](docs/SCORING.md) for scoring semantics.
+
+## CK Metrics
+
+`--metrics ck` switches the report from callable cognitive complexity to
+class-level CK metrics. It reports `CBO`, `LCOM`, and `WMC` before/after/delta
+values for classes in tracked changed files.
+
+CK metrics are separate from cognitive complexity rule sets. `--metrics ck`
+does not use `--ruleset`, does not affect complexity thresholds, and is not a
+debug mode.
+
+`--metrics ck` can be used with `--language auto`, `--language java`, or
+`--language python`. Auto mode reports Java and Python classes in changed
+tracked `.java` and `.py` files.
+
+`--metrics ck` cannot be combined with `--details`, `--hotspots`, `--debug`,
+`--list-rulesets`, or `--ruleset`.
+
+## History Metrics
+
+`--metrics history` switches the report from callable cognitive complexity to
+file-level history metrics inspired by Adam Tornhill's hotspot and
+change-coupling analyses.
+
+This is a separate history-mining report. It is not a model migration, API
+dependency removal, projection removal, or class rename.
+
+History metrics include:
+
+```text
+hotspots         recent churn weighted by current cognitive complexity
+change coupling file pairs that frequently change together
+```
+
+By default, history mining uses the last 90 days. Use `--history-days` to change
+the window:
+
+```bash
+diffcog --metrics history --history-days 30
+```
+
+The history report respects `--language`, `--include`, and `--exclude`. With
+`--language auto`, Java and Python tracked files are included.
+
+Hotspot scoring is file-level:
+
+```text
+hotspot score = current file cognitive complexity * recent commit count
+```
+
+Current file cognitive complexity is computed from the resolved `after` side of
+the comparison. History traversal is anchored at the target ref when the `after`
+side is a ref, and at `HEAD` for index or working-tree comparisons. Merge commits
+are included.
+
+Change coupling reports file pairs with at least two shared commits. Coupling
+percentage is:
+
+```text
+shared commits / min(left file commits, right file commits) * 100
+```
+
+`--metrics history` is separate from complexity thresholds. `--max-new` and
+`--max-delta` do not apply to history metrics.
+
+`--history-days` may only be used with `--metrics history`.
+
+`--metrics history` cannot be combined with `--details`, `--hotspots`, `--debug`,
+`--list-rulesets`, or `--ruleset`.
 
 ## Path Filters
 
