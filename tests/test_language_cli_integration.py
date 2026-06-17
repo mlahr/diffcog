@@ -51,6 +51,22 @@ def test_auto_language_reports_java_and_python_changes(
     assert "New complexity: +2" in output
 
 
+def test_auto_language_details_group_by_language(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
+    write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--details"]) == EXIT_OK
+
+    output = capsys.readouterr().out
+    assert "Java:\n  M src/Foo.java" in output
+    assert "Python:\n  M src/app.py" in output
+    assert output.index("Java:") < output.index("Python:")
+
+
 def test_explicit_java_language_ignores_python_changes(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -97,3 +113,19 @@ def test_auto_language_json_includes_rulesets(
     assert payload["ruleset"] == "auto"
     assert payload["rulesets"] == ["java.default", "python.default"]
     assert [file["path"] for file in payload["files"]] == ["src/Foo.java", "src/app.py"]
+    assert [file["language"] for file in payload["files"]] == ["java", "python"]
+
+
+def test_explicit_language_json_includes_language(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--language", "python", "--json"]) == EXIT_OK
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ruleset"] == "python.default"
+    assert payload["rulesets"] == ["python.default"]
+    assert payload["files"][0]["language"] == "python"

@@ -39,7 +39,7 @@ def format_text(
     )
 
     if details and result.file_deltas:
-        lines.extend(["", *_format_file_delta_details(result.file_deltas)])
+        lines.extend(["", *_format_file_delta_details(result)])
     elif details and result.files:
         lines.extend(["", "Changed analyzed files:"])
         lines.extend(f"  {_format_changed_file(file.status, file.old_path, file.path)}" for file in result.files)
@@ -114,6 +114,7 @@ def format_snapshot_json(result: AnalysisResult) -> str:
                 "status": pair.file.status,
                 "path": pair.file.path,
                 "old_path": pair.file.old_path,
+                "language": pair.file.language_id,
                 "before": _snapshot_stats(pair.before),
                 "after": _snapshot_stats(pair.after),
             }
@@ -162,6 +163,7 @@ def format_symbol_json(result: SymbolDebugResult) -> str:
                 "status": file.file.status,
                 "path": file.file.path,
                 "old_path": file.file.old_path,
+                "language": file.file.language_id,
                 "before": _symbol_side_payload(
                     present=file.before_present,
                     parse_error=file.before_parse_error,
@@ -223,6 +225,7 @@ def format_complexity_json(result: ComplexityDebugResult) -> str:
                 "status": file.file.status,
                 "path": file.file.path,
                 "old_path": file.file.old_path,
+                "language": file.file.language_id,
                 "callables": [
                     _complexity_payload(callable_)
                     for callable_ in file.callables
@@ -258,6 +261,7 @@ def _json_files_payload(result: AnalysisResult) -> list[dict[str, Any]]:
                 "status": file_delta.file.status,
                 "path": file_delta.file.path,
                 "old_path": file_delta.file.old_path,
+                "language": file_delta.file.language_id,
                 "callables": [
                     _callable_delta_payload(callable_delta, file_delta.file)
                     for callable_delta in file_delta.callables
@@ -270,27 +274,58 @@ def _json_files_payload(result: AnalysisResult) -> list[dict[str, Any]]:
             "status": file.status,
             "path": file.path,
             "old_path": file.old_path,
+            "language": file.language_id,
         }
         for file in result.files
     ]
 
 
-def _format_file_delta_details(file_deltas: list[Any]) -> list[str]:
-    lines = []
-    for file_delta in file_deltas:
-        lines.append(_format_changed_file(file_delta.file.status, file_delta.file.old_path, file_delta.file.path))
-        added = [delta for delta in file_delta.callables if delta.status == "added"]
-        modified = [delta for delta in file_delta.callables if delta.status == "modified"]
-        removed = [delta for delta in file_delta.callables if delta.status == "removed"]
-        lines.extend(_format_callable_delta_group("modified", modified, file_delta.file))
-        lines.extend(_format_callable_delta_group("added", added, file_delta.file))
-        lines.extend(_format_callable_delta_group("removed", removed, file_delta.file))
-        if not file_delta.callables:
-            lines.append("  no changed callables")
+def _format_file_delta_details(result: AnalysisResult) -> list[str]:
+    if len(result.rule_set_ids) > 1:
+        return _format_grouped_file_delta_details(result.file_deltas)
+    return _format_flat_file_delta_details(result.file_deltas)
+
+
+def _format_grouped_file_delta_details(file_deltas: list[Any]) -> list[str]:
+    lines: list[str] = []
+    for language_id in dict.fromkeys(file_delta.file.language_id for file_delta in file_deltas):
+        language_deltas = [
+            file_delta for file_delta in file_deltas if file_delta.file.language_id == language_id
+        ]
+        lines.append(f"{_format_language_label(language_id)}:")
+        lines.extend(_format_flat_file_delta_details(language_deltas, indent="  "))
         lines.append("")
     if lines and lines[-1] == "":
         lines.pop()
     return lines
+
+
+def _format_flat_file_delta_details(file_deltas: list[Any], indent: str = "") -> list[str]:
+    lines = []
+    for file_delta in file_deltas:
+        lines.append(
+            f"{indent}{_format_changed_file(file_delta.file.status, file_delta.file.old_path, file_delta.file.path)}"
+        )
+        added = [delta for delta in file_delta.callables if delta.status == "added"]
+        modified = [delta for delta in file_delta.callables if delta.status == "modified"]
+        removed = [delta for delta in file_delta.callables if delta.status == "removed"]
+        lines.extend(_format_callable_delta_group("modified", modified, file_delta.file, indent=indent))
+        lines.extend(_format_callable_delta_group("added", added, file_delta.file, indent=indent))
+        lines.extend(_format_callable_delta_group("removed", removed, file_delta.file, indent=indent))
+        if not file_delta.callables:
+            lines.append(f"{indent}  no changed callables")
+        lines.append("")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def _format_language_label(language_id: str) -> str:
+    labels = {
+        "java": "Java",
+        "python": "Python",
+    }
+    return labels.get(language_id, language_id or "Unknown")
 
 
 def _format_hotspots(file_deltas: list[Any]) -> list[str]:
@@ -375,25 +410,25 @@ def _top_changed_line_contribution(callable_delta: CallableComplexityDelta, file
 
 
 def _format_callable_delta_group(
-    label: str, callable_deltas: list[CallableComplexityDelta], file: Any
+    label: str, callable_deltas: list[CallableComplexityDelta], file: Any, indent: str = ""
 ) -> list[str]:
     if not callable_deltas:
         return []
 
-    lines = [f"  {label}:"]
+    lines = [f"{indent}  {label}:"]
     for callable_delta in callable_deltas:
         callable_ = callable_delta.after_callable or callable_delta.before_callable
-        lines.append(f"    {_format_callable_signature(callable_)} {callable_.kind}")
+        lines.append(f"{indent}    {_format_callable_signature(callable_)} {callable_.kind}")
         if callable_delta.before_callable is not None:
-            lines.append(f"      before complexity {callable_delta.before_score}")
+            lines.append(f"{indent}      before complexity {callable_delta.before_score}")
         if callable_delta.after_callable is not None:
-            lines.append(f"      after  complexity {callable_delta.after_score}")
-        lines.append(f"      delta {_format_signed(callable_delta.delta)}")
+            lines.append(f"{indent}      after  complexity {callable_delta.after_score}")
+        lines.append(f"{indent}      delta {_format_signed(callable_delta.delta)}")
         contributions = _changed_line_contributions(callable_delta, file)
         if contributions:
-            lines.append("      complexity on changed lines:")
+            lines.append(f"{indent}      complexity on changed lines:")
             lines.extend(
-                f"        {contribution.rule_id} line {contribution.line} +{contribution.points}"
+                f"{indent}        {contribution.rule_id} line {contribution.line} +{contribution.points}"
                 for contribution in contributions
             )
     return lines

@@ -37,6 +37,7 @@ class ChangedFile:
     old_path: str
     old_ranges: list["LineRange"]
     new_ranges: list["LineRange"]
+    language_id: str = ""
 
 
 @dataclass(frozen=True)

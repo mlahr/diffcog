@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from dataclasses import replace
 
 from diffcog.git import discover_changed_files, ensure_git_repo, load_source_pairs
 from diffcog.languages.base import LanguageDefinition
@@ -27,7 +28,10 @@ def analyze(
 ) -> AnalysisResult:
     active_ruleset = ruleset or language.default_ruleset
     ensure_git_repo(cwd)
-    files = discover_changed_files(comparison, language.file_extensions, cwd, path_filter)
+    files = [
+        replace(file, language_id=language.id)
+        for file in discover_changed_files(comparison, language.file_extensions, cwd, path_filter)
+    ]
     source_pairs = load_source_pairs(comparison, files, cwd)
     file_deltas = [
         _analyze_source_pair(source_pair, language, active_ruleset) for source_pair in source_pairs

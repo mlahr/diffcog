@@ -101,7 +101,7 @@ def test_json_report_shape() -> None:
     assert payload["ruleset"] == "java.default"
     assert payload["rulesets"] == ["java.default"]
     assert payload["files"] == [
-        {"status": "M", "path": "src/Foo.java", "old_path": "src/Foo.java"}
+        {"status": "M", "path": "src/Foo.java", "old_path": "src/Foo.java", "language": ""}
     ]
     assert payload["thresholds"] == {"max_new": 10, "max_delta": 5}
     assert payload["threshold_failed"] is False
@@ -398,7 +398,7 @@ def test_json_report_ignores_hotspots_mode() -> None:
 
     assert "hotspots" not in payload
     assert payload["files"] == [
-        {"status": "M", "path": "src/Foo.java", "old_path": "src/Foo.java"}
+        {"status": "M", "path": "src/Foo.java", "old_path": "src/Foo.java", "language": ""}
     ]
 
 
@@ -457,13 +457,14 @@ def test_snapshot_json_report_shape() -> None:
         "after": "working tree",
     }
     assert payload["snapshots"] == [
-        {
-            "status": "M",
-            "path": "src/Foo.java",
-            "old_path": "src/Foo.java",
-            "before": {"present": True, "lines": 1, "bytes": 13},
-            "after": {"present": True, "lines": 1, "bytes": 13},
-        }
+            {
+                "status": "M",
+                "path": "src/Foo.java",
+                "old_path": "src/Foo.java",
+                "language": "",
+                "before": {"present": True, "lines": 1, "bytes": 13},
+                "after": {"present": True, "lines": 1, "bytes": 13},
+            }
     ]
 
 
