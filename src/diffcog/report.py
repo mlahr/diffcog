@@ -44,7 +44,7 @@ def format_text(
         lines.extend(["", "Changed analyzed files:"])
         lines.extend(f"  {_format_changed_file(file.status, file.old_path, file.path)}" for file in result.files)
     elif hotspots and result.files:
-        lines.extend(["", *_format_hotspots(result.file_deltas)])
+        lines.extend(["", *_format_hotspots(result)])
 
     if result.threshold_failed(thresholds):
         lines.extend(["", "Threshold failed."])
@@ -328,11 +328,11 @@ def _format_language_label(language_id: str) -> str:
     return labels.get(language_id, language_id or "Unknown")
 
 
-def _format_hotspots(file_deltas: list[Any]) -> list[str]:
+def _format_hotspots(result: AnalysisResult) -> list[str]:
     hotspot_rows = sorted(
         [
             (file_delta, callable_delta)
-            for file_delta in file_deltas
+            for file_delta in result.file_deltas
             for callable_delta in file_delta.callables
             if callable_delta.delta != 0
         ],
@@ -346,8 +346,9 @@ def _format_hotspots(file_deltas: list[Any]) -> list[str]:
     display_paths = _shortest_unique_suffixes([file_delta.file.path for file_delta, _ in shown_rows])
     for index, (file_delta, callable_delta) in enumerate(shown_rows):
         callable_ = callable_delta.after_callable or callable_delta.before_callable
+        language_label = _format_hotspot_language_label(file_delta.file.language_id, result)
         lines.append(
-            f"  {display_paths[index]}:{callable_.start_line} "
+            f"  {language_label}{display_paths[index]}:{callable_.start_line} "
             f"{_format_hotspot_callable_signature(callable_, display_paths[index])} {callable_.kind} "
             f"{callable_delta.before_score} -> {callable_delta.after_score} "
             f"(delta {_format_signed(callable_delta.delta)})"
@@ -365,6 +366,12 @@ def _format_hotspots(file_deltas: list[Any]) -> list[str]:
             "Use --details for the full list."
         )
     return lines
+
+
+def _format_hotspot_language_label(language_id: str, result: AnalysisResult) -> str:
+    if len(result.rule_set_ids) <= 1:
+        return ""
+    return f"[{_format_language_label(language_id)}] "
 
 
 def _shortest_unique_suffixes(paths: list[str]) -> list[str]:

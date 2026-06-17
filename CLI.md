@@ -224,6 +224,8 @@ Unknown rule set names are usage errors.
 By default it lists all supported languages. With `--language java` or
 `--language python`, it lists only that language's rule sets.
 
+See [docs/SCORING.md](docs/SCORING.md) for scoring semantics.
+
 ## Path Filters
 
 `--include` and `--exclude` use git pathspec syntax.

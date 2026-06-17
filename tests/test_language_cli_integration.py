@@ -67,6 +67,50 @@ def test_auto_language_details_group_by_language(
     assert output.index("Java:") < output.index("Python:")
 
 
+def test_auto_language_hotspots_include_language_labels_and_global_order(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
+    write(
+        tmp_path,
+        "src/app.py",
+        "def run(a, b, c):\n"
+        "    if a and b and c:\n"
+        "        return 1\n"
+        "    return 0\n",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--hotspots"]) == EXIT_OK
+
+    output = capsys.readouterr().out
+    assert "[Python] app.py:1 run/3 function 0 -> 2 (delta +2)" in output
+    assert "[Java] Foo.java:1 run/0 method 0 -> 1 (delta +1)" in output
+    assert output.index("[Python]") < output.index("[Java]")
+
+
+def test_explicit_language_hotspots_do_not_include_language_labels(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    init_repo(tmp_path)
+    write(
+        tmp_path,
+        "src/app.py",
+        "def run(a, b, c):\n"
+        "    if a and b and c:\n"
+        "        return 1\n"
+        "    return 0\n",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--language", "python", "--hotspots"]) == EXIT_OK
+
+    output = capsys.readouterr().out
+    assert "app.py:1 run/3 function 0 -> 2 (delta +2)" in output
+    assert "[Python]" not in output
+
+
 def test_explicit_java_language_ignores_python_changes(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:

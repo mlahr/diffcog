@@ -130,8 +130,8 @@ Exit codes:
 - Reports custom complexity totals for changed callables.
 - Uses auto mode by default, with `java.default` and `python.default`.
 
-See [CLI.md](CLI.md) for the CLI contract and [BRAINSTORMING.md](BRAINSTORMING.md)
-for design notes.
+See [CLI.md](CLI.md) for the CLI contract, [docs/SCORING.md](docs/SCORING.md)
+for scoring semantics, and [BRAINSTORMING.md](BRAINSTORMING.md) for design notes.
 
 ## Development
 
