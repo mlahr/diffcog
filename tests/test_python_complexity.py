@@ -139,7 +139,7 @@ def test_control_flow_ruleset_excludes_boolean_chain() -> None:
     assert score_function_control_flow(source) == 1
 
 
-def test_match_and_cases_score() -> None:
+def test_match_scores_once() -> None:
     source = (
         "def run(x):\n"
         "    match x:\n"
@@ -149,12 +149,12 @@ def test_match_and_cases_score() -> None:
         "            return 0\n"
     )
 
-    assert score_function(source) == 5
+    assert score_function(source) == 1
     assert contribution_ids(source).count("python.match") == 1
-    assert contribution_ids(source).count("python.case") == 2
+    assert "python.case" not in contribution_ids(source)
 
 
-def test_case_body_adds_nesting_penalty() -> None:
+def test_case_body_uses_match_nesting_only() -> None:
     source = (
         "def run(x, y):\n"
         "    match x:\n"
@@ -163,28 +163,34 @@ def test_case_body_adds_nesting_penalty() -> None:
         "                return 1\n"
     )
 
-    assert score_function(source) == 6
+    assert score_function(source) == 3
 
 
-def test_comprehension_for_and_if_clauses_score() -> None:
+def test_comprehension_clauses_do_not_score() -> None:
     source = "def run(rows):\n    return [x for row in rows for x in row if x]\n"
 
-    assert score_function(source) == 6
-    assert contribution_ids(source).count("python.comprehension_for") == 2
-    assert contribution_ids(source).count("python.comprehension_if") == 1
+    assert score_function(source) == 0
+    assert "python.comprehension_for" not in contribution_ids(source)
+    assert "python.comprehension_if" not in contribution_ids(source)
 
 
-def test_all_comprehension_forms_score_clauses() -> None:
-    assert score_function("def run(xs):\n    return {x for x in xs if x}\n") == 4
-    assert score_function("def run(xs):\n    return {x: x for x in xs if x}\n") == 4
-    assert score_function("def run(xs):\n    return sum(x for x in xs if x)\n") == 4
+def test_all_comprehension_forms_are_nesting_only() -> None:
+    assert score_function("def run(xs):\n    return {x for x in xs if x}\n") == 0
+    assert score_function("def run(xs):\n    return {x: x for x in xs if x}\n") == 0
+    assert score_function("def run(xs):\n    return sum(x for x in xs if x)\n") == 0
 
 
 def test_comprehension_filter_boolean_chain_is_default_only() -> None:
     source = "def run(xs):\n    return [x for x in xs if x and ok(x)]\n"
 
-    assert score_function(source) == 5
-    assert score_function_control_flow(source) == 4
+    assert score_function(source) == 1
+    assert score_function_control_flow(source) == 0
+
+
+def test_comprehension_increases_nesting_without_scoring_itself() -> None:
+    source = "def run(xs):\n    return [1 if x else 0 for x in xs]\n"
+
+    assert score_function(source) == 2
 
 
 def test_lambda_increases_nesting_without_scoring_itself() -> None:
@@ -194,19 +200,25 @@ def test_lambda_increases_nesting_without_scoring_itself() -> None:
     assert "python.lambda" not in contribution_ids(source)
 
 
-def test_with_and_async_with_score() -> None:
-    assert score_function("def run():\n    with open('x') as handle:\n        return handle.read()\n") == 1
+def test_with_and_async_with_do_not_score_directly() -> None:
+    assert score_function("def run():\n    with open('x') as handle:\n        return handle.read()\n") == 0
     assert (
         score_function(
             "async def run(lock):\n"
             "    async with lock:\n"
             "        return 1\n"
         )
-        == 1
+        == 0
     )
 
 
-def test_try_else_and_finally_score() -> None:
+def test_with_increases_nesting_without_scoring_itself() -> None:
+    source = "def run(x):\n    with open('x'):\n        if x:\n            return 1\n"
+
+    assert score_function(source) == 2
+
+
+def test_try_else_and_finally_do_not_score() -> None:
     source = (
         "def run():\n"
         "    try:\n"
@@ -219,10 +231,10 @@ def test_try_else_and_finally_score() -> None:
         "        cleanup()\n"
     )
 
-    assert score_function(source) == 3
+    assert score_function(source) == 1
     assert contribution_ids(source).count("python.except") == 1
-    assert contribution_ids(source).count("python.try_else") == 1
-    assert contribution_ids(source).count("python.finally") == 1
+    assert "python.try_else" not in contribution_ids(source)
+    assert "python.finally" not in contribution_ids(source)
 
 
 def test_direct_recursion_scores_one() -> None:

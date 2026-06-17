@@ -39,9 +39,6 @@ CONTROL_FLOW_NODE_TYPES = {
     "except_clause",
     "conditional_expression",
     "match_statement",
-    "case_clause",
-    "for_in_clause",
-    "if_clause",
     "lambda",
     "with_statement",
 }
@@ -189,56 +186,6 @@ def _else_rule(node: Node, _context: ScoringContext) -> list[ComplexityContribut
     ]
 
 
-def _try_else_rule(node: Node, _context: ScoringContext) -> list[ComplexityContribution]:
-    if node.parent is None or node.parent.type != "try_statement":
-        return []
-    return [
-        ComplexityContribution(
-            rule_id="python.try_else",
-            line=node.start_point.row + 1,
-            points=1,
-            message="try else branch",
-        )
-    ]
-
-
-def _finally_rule(node: Node, _context: ScoringContext) -> list[ComplexityContribution]:
-    return [
-        ComplexityContribution(
-            rule_id="python.finally",
-            line=node.start_point.row + 1,
-            points=1,
-            message="finally branch",
-        )
-    ]
-
-
-def _comprehension_rule(rule_id: str, label: str) -> RuleScorer:
-    def score(node: Node, context: ScoringContext) -> list[ComplexityContribution]:
-        if not _has_comprehension_ancestor(node):
-            return []
-        points = 1 + context.nesting
-        return [
-            ComplexityContribution(
-                rule_id=rule_id,
-                line=node.start_point.row + 1,
-                points=points,
-                message=f"{label} at nesting depth {context.nesting}",
-            )
-        ]
-
-    return score
-
-
-def _has_comprehension_ancestor(node: Node) -> bool:
-    parent = node.parent
-    while parent is not None:
-        if parent.type in COMPREHENSION_NODE_TYPES:
-            return True
-        parent = parent.parent
-    return False
-
-
 def _boolean_chain_rule(node: Node, _context: ScoringContext) -> list[ComplexityContribution]:
     if _has_boolean_operator_ancestor(node):
         return []
@@ -336,36 +283,6 @@ PYTHON_CONTROL_FLOW_RULES = [
         id="python.match",
         node_types={"match_statement"},
         score=_control_flow_rule("python.match", "match statement"),
-    ),
-    ComplexityRule(
-        id="python.case",
-        node_types={"case_clause"},
-        score=_control_flow_rule("python.case", "case clause"),
-    ),
-    ComplexityRule(
-        id="python.with",
-        node_types={"with_statement"},
-        score=_control_flow_rule("python.with", "with statement"),
-    ),
-    ComplexityRule(
-        id="python.try_else",
-        node_types={"else_clause"},
-        score=_try_else_rule,
-    ),
-    ComplexityRule(
-        id="python.finally",
-        node_types={"finally_clause"},
-        score=_finally_rule,
-    ),
-    ComplexityRule(
-        id="python.comprehension_for",
-        node_types={"for_in_clause"},
-        score=_comprehension_rule("python.comprehension_for", "comprehension for clause"),
-    ),
-    ComplexityRule(
-        id="python.comprehension_if",
-        node_types={"if_clause"},
-        score=_comprehension_rule("python.comprehension_if", "comprehension if clause"),
     ),
 ]
 

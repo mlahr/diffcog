@@ -17,6 +17,8 @@ not a separate scoring model.
 - Recursion scores `1` once per recursive callable, at the first recursive call line.
 - Default rule sets include control flow plus boolean operator chains.
 - Control-flow rule sets exclude boolean operator chains.
+- Nesting-only constructs increase the nesting depth for contained expressions
+  without producing a contribution.
 
 ## Java rule sets
 
@@ -80,12 +82,6 @@ python.loop      for, async for, while
 python.except    except clause
 python.ternary   conditional expression
 python.match     match statement
-python.case      case clause
-python.with      with, async with
-python.try_else  try else branch
-python.finally   finally branch
-python.comprehension_for  comprehension for clause
-python.comprehension_if   comprehension if clause
 python.recursion local function or method recursion
 ```
 
@@ -93,8 +89,11 @@ python.recursion local function or method recursion
 add an extra nesting penalty beyond its own branch score.
 
 Lambdas increase nesting for contained expressions, but they do not produce a
-separate contribution. Comprehension containers also increase nesting; their
-hidden `for` and `if` clauses are the scored decision points.
+separate contribution. `with` / `async with` and comprehension containers also
+increase nesting without producing separate contributions.
+
+`match` is scored like Java `switch`: the `match` statement scores once, and
+individual `case` clauses do not score.
 
 Python boolean-chain rule:
 
@@ -114,3 +113,5 @@ object variables do not count as local recursion.
 Python exclusions and limits:
 
 - Lambdas are not reported as separate callables and do not score directly.
+- `case` clauses, comprehension `for` / `if` clauses, `try else`, and `finally`
+  do not score directly.
