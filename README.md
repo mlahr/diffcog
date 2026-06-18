@@ -1,24 +1,53 @@
 # diffcog
 
-Prototype CLI for measuring cognitive complexity introduced by code changes.
+Measure cognitive complexity introduced by code changes.
 
-The current implementation analyzes tracked Java and Python changes through
-language adapters, maps changed lines to callables, and reports custom
-cognitive complexity deltas.
+`diffcog` is a prototype command-line tool for reviewing how a change affects
+method-level cognitive complexity. It compares two Git-backed code states,
+parses the changed tracked Java and Python files, maps changed line ranges to
+callables, and reports before/after complexity deltas.
 
-## Install
+The goal is to make complexity review fit naturally into local development and
+CI: compare a branch, staged change, working tree, or pair of refs, then fail
+the run when the introduced complexity crosses a configured threshold.
+
+## What it reports
+
+- New complexity introduced by added or more complex callables.
+- Removed complexity from deleted or simplified callables.
+- Net complexity delta between the before and after states.
+- Optional changed-file details and top changed-callable hotspots.
+- Optional CK class metrics: `CBO`, `LCOM`, and `WMC`.
+- Optional history metrics: file-level hotspots and change coupling.
+- Optional JSON output for automation.
+
+## Current scope
+
+`diffcog` currently analyzes tracked `.java` and `.py` files. Untracked files are
+ignored. Java and Python are implemented through separate language adapters,
+with `auto` mode running both adapters in one command.
+
+This repository is still a prototype. The CLI contract is documented in
+[CLI.md](CLI.md), and scoring semantics are documented in
+[docs/SCORING.md](docs/SCORING.md).
+
+## Installation
+
+Install from a local checkout with `uv`:
 
 ```bash
 uv tool install --force -e /path/to/diffcog
 ```
 
-Then run `diffcog` from any git repository.
+After installation, run `diffcog` from inside any Git repository:
 
-The CLI analyzes the current working directory.
+```bash
+diffcog
+```
 
-Run the same install command again after dependencies change.
+Run the install command again after dependency or entry-point changes.
 
-## Usage
+## Basic usage
 
 Compare `HEAD` against the current working tree:
 
@@ -26,30 +55,58 @@ Compare `HEAD` against the current working tree:
 diffcog
 ```
 
-Compare a base ref against the working tree:
+Compare a base ref against the current working tree:
 
 ```bash
 diffcog main
 ```
 
-Compare two refs:
+Compare two explicit refs:
 
 ```bash
 diffcog HEAD~1 HEAD
 diffcog main HEAD
 ```
 
-Compare `HEAD` against staged changes:
+Compare `HEAD` against staged changes only:
 
 ```bash
 diffcog --staged
 ```
 
-Compare staged changes against unstaged working tree changes:
+Compare the index against unstaged working tree changes:
 
 ```bash
 diffcog --unstaged
 ```
+
+## Comparison semantics
+
+`diffcog BASE TARGET` means:
+
+```text
+before = BASE
+after  = TARGET
+introduced complexity = complexity(after) - complexity(before)
+```
+
+`diffcog BASE` means:
+
+```text
+before = BASE
+after  = working tree
+```
+
+`diffcog` means:
+
+```text
+before = HEAD
+after  = working tree
+```
+
+When both refs are explicit, uncommitted changes are ignored.
+
+## Output modes
 
 Show changed analyzed files:
 
@@ -57,65 +114,16 @@ Show changed analyzed files:
 diffcog --details
 ```
 
-Show top complexity hotspots:
+Show top changed-callable complexity hotspots:
 
 ```bash
 diffcog --hotspots
 ```
 
-Show CK class metrics:
-
-```bash
-diffcog --metrics ck
-```
-
-Show Tornhill-style history metrics:
-
-```bash
-diffcog --metrics history
-diffcog --metrics history --history-days 30
-```
-
-Print JSON:
+Print machine-readable JSON:
 
 ```bash
 diffcog --json
-```
-
-Limit analysis to matching paths:
-
-```bash
-diffcog --include 'src/main'
-diffcog --exclude '**/generated/**'
-diffcog --include 'src' --exclude '**/generated/**'
-```
-
-Select a language or a built-in rule set:
-
-```bash
-diffcog --language java
-diffcog --language python
-diffcog --language java --ruleset java.control-flow
-diffcog --language python --ruleset python.control-flow
-diffcog --list-rulesets
-```
-
-Show loaded snapshot metadata:
-
-```bash
-diffcog --debug show-snapshots
-```
-
-Show parsed callable symbols:
-
-```bash
-diffcog --debug show-symbols
-```
-
-Show complexity scoring for changed callables:
-
-```bash
-diffcog --debug show-complexity
 ```
 
 Set threshold exits:
@@ -133,25 +141,103 @@ Exit codes:
 2 = threshold failed
 ```
 
-## Current Scope
+## Languages and rule sets
 
-- Tracks `.java` and `.py` files by default.
-- Uses a language-neutral core pipeline with Java and Python adapters.
-- Supports repeatable git pathspec filters with `--include` and `--exclude`.
-- Uses git refs, index, and working tree states as inputs.
-- Excludes untracked files for now.
-- Reports custom complexity totals for changed callables.
-- Reports CK `CBO`, `LCOM`, and `WMC` class metrics with `--metrics ck`.
-- Reports file-level Tornhill-style history hotspots and change coupling with
-  `--metrics history`.
-- Uses auto mode by default, with `java.default` and `python.default`.
+Auto mode is the default. It analyzes changed tracked Java and Python files in
+the same run, using each language adapter's default rule set.
 
-See [CLI.md](CLI.md) for the CLI contract, [docs/SCORING.md](docs/SCORING.md)
-for scoring semantics, and [BRAINSTORMING.md](BRAINSTORMING.md) for design notes.
+Select a language:
+
+```bash
+diffcog --language java
+diffcog --language python
+```
+
+Select a built-in rule set:
+
+```bash
+diffcog --language java --ruleset java.default
+diffcog --language java --ruleset java.control-flow
+diffcog --language python --ruleset python.default
+diffcog --language python --ruleset python.control-flow
+```
+
+List available rule sets:
+
+```bash
+diffcog --list-rulesets
+```
+
+`--ruleset` requires an explicit `--language java` or `--language python`.
+Auto mode always uses each language adapter's default rule set.
+
+## Path filtering
+
+Limit analysis to matching changed paths:
+
+```bash
+diffcog --include 'src/main'
+diffcog --include 'src/**/*.java'
+diffcog --exclude '**/generated/**'
+diffcog --include 'src' --exclude '**/generated/**'
+```
+
+`--include` and `--exclude` use Git pathspec syntax and may be repeated.
+Path filters do not expand language scope; only tracked files supported by the
+active language mode are analyzed.
+
+## Alternate metrics
+
+Show CK class metrics:
+
+```bash
+diffcog --metrics ck
+diffcog --metrics ck --json
+```
+
+`--metrics ck` reports class-level `CBO`, `LCOM`, and `WMC` before/after/delta
+values for classes in tracked changed Java and Python files.
+
+Show history metrics:
+
+```bash
+diffcog --metrics history
+diffcog --metrics history --history-days 30
+diffcog --metrics history --json
+```
+
+`--metrics history` reports recent file-level hotspots and change coupling.
+By default, history mining uses the last 90 days.
+
+Alternate metrics are separate report modes. They do not use complexity rule
+sets, and complexity thresholds do not apply to them.
+
+## Debug reports
+
+Show loaded source snapshot metadata:
+
+```bash
+diffcog --debug show-snapshots
+```
+
+Show parsed callable symbols:
+
+```bash
+diffcog --debug show-symbols
+```
+
+Show complexity scoring for changed callables:
+
+```bash
+diffcog --debug show-complexity
+```
+
+Debug modes are intended for development and troubleshooting. They do not print
+full source content.
 
 ## Development
 
-Check the codebase:
+Run the full project check:
 
 ```bash
 uv run diffcog-check
