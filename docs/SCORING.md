@@ -7,7 +7,7 @@ the before and after source states.
 introduced complexity = complexity(after) - complexity(before)
 ```
 
-CK metrics are a separate class-level metric family. They are not cognitive
+CK metrics are a separate type-level metric family. They are not cognitive
 complexity scores and do not use cognitive complexity rule sets.
 
 Contribution lines explain which rules contributed to a callable score. They are
@@ -119,10 +119,57 @@ Python exclusions and limits:
 - `case` clauses, comprehension `for` / `if` clauses, `try else`, and `finally`
   do not score directly.
 
+## Go rule sets
+
+```text
+go.default       control flow plus boolean operator chains
+go.control-flow  control flow only
+```
+
+Go control-flow rules:
+
+```text
+go.if        if statement
+go.else      else branch
+go.loop      for, including range loops
+go.switch    expression switch or type switch
+go.select    select statement
+go.recursion local function or method recursion
+```
+
+`else if` is treated as a continuation of the same conditional chain. It does
+not add an extra nesting penalty beyond its own branch score.
+
+Function literals increase nesting for contained control flow, but they are not
+reported as separate callables and do not produce a separate contribution.
+
+Go boolean-chain rule:
+
+```text
+go.boolean_chain
+```
+
+Boolean-chain scoring counts contiguous `&&` / `||` operator sequences. Switching
+between `&&` and `||` starts a new sequence. Unary `!` splits a sequence. Nested
+boolean expressions are scored only at the top-most boolean expression that
+represents the chain.
+
+Go recursion detection covers package functions reached through direct calls and
+methods reached through selector calls on the current receiver variable. Calls
+through other variables, interfaces, embedded method promotion, or other packages
+do not count as local recursion.
+
+Go exclusions and limits:
+
+- Individual `case` and `default` clauses do not score directly.
+- `defer`, `go`, `panic`, `recover`, channel send, and channel receive do not
+  score directly.
+- Function literals are not reported as separate callables.
+
 ## CK metrics
 
-`--metrics ck` reports class-level `CBO`, `LCOM`, and `WMC` values for classes in
-tracked changed files.
+`--metrics ck` reports `CBO`, `LCOM`, and `WMC` values for Java and Python
+classes and Go struct/interface types in tracked changed files.
 
 - `WMC` is the count of participating instance methods. Java constructors count;
   Java static methods, Python static methods, and Python class methods do not.
@@ -140,6 +187,20 @@ Python `CBO` counts base classes, annotations, imported constructor-style calls,
 and statically nameable `self.field.method(...)` dependencies when the field can
 be connected to a visible annotated type. It does not perform type checking or
 whole-project import resolution.
+
+Go struct `WMC` counts same-file receiver methods whose receiver base type
+matches the struct. Go struct `LCOM` uses receiver-field access such as
+`receiver.field`. Go struct `CBO` counts external type references in struct
+fields and matching receiver methods, including parameter types, result types,
+local variable types, composite literal types, generic type arguments, and
+qualified type names.
+
+Go interface `WMC` counts declared interface methods. Go interface `LCOM` is
+always `0`. Go interface `CBO` counts embedded interfaces and method signature
+types.
+
+Go CK metrics are per-file. Receiver methods declared in other files are not
+counted.
 
 ## History Metrics
 

@@ -31,6 +31,7 @@ def init_repo(repo: Path) -> None:
     git(repo, "config", "user.name", "Test User")
     write(repo, "src/Foo.java", "class Foo {}\n")
     write(repo, "src/app.py", "VALUE = 1\n")
+    write(repo, "src/app.go", "package app\n\nconst Value = 1\n")
     git(repo, "add", ".")
     git(repo, "commit", "-m", "initial")
 
@@ -41,14 +42,15 @@ def test_auto_language_reports_java_and_python_changes(
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
     write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
     monkeypatch.chdir(tmp_path)
 
     assert main([]) == EXIT_OK
 
     output = capsys.readouterr().out
-    assert "Rule sets: java.default, python.default" in output
-    assert "Analyzed files changed: 2" in output
-    assert "New complexity: +2" in output
+    assert "Rule sets: java.default, python.default, go.default" in output
+    assert "Analyzed files changed: 3" in output
+    assert "New complexity: +3" in output
 
 
 def test_auto_language_details_group_by_language(
@@ -57,6 +59,7 @@ def test_auto_language_details_group_by_language(
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
     write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
     monkeypatch.chdir(tmp_path)
 
     assert main(["--details"]) == EXIT_OK
@@ -64,7 +67,9 @@ def test_auto_language_details_group_by_language(
     output = capsys.readouterr().out
     assert "Java:\n  M src/Foo.java" in output
     assert "Python:\n  M src/app.py" in output
+    assert "Go:\n  M src/app.go" in output
     assert output.index("Java:") < output.index("Python:")
+    assert output.index("Python:") < output.index("Go:")
 
 
 def test_auto_language_hotspots_include_language_labels_and_global_order(
@@ -80,6 +85,7 @@ def test_auto_language_hotspots_include_language_labels_and_global_order(
         "        return 1\n"
         "    return 0\n",
     )
+    write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
     monkeypatch.chdir(tmp_path)
 
     assert main(["--hotspots"]) == EXIT_OK
@@ -87,6 +93,7 @@ def test_auto_language_hotspots_include_language_labels_and_global_order(
     output = capsys.readouterr().out
     assert "[Python] app.py:1 run/3 function 0 -> 2 (delta +2)" in output
     assert "[Java] Foo.java:1 run/0 method 0 -> 1 (delta +1)" in output
+    assert "[Go] app.go:3 app#Run/1 function 0 -> 1 (delta +1)" in output
     assert output.index("[Python]") < output.index("[Java]")
 
 
@@ -117,6 +124,7 @@ def test_explicit_java_language_ignores_python_changes(
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
     write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
     monkeypatch.chdir(tmp_path)
 
     assert main(["--language", "java"]) == EXIT_OK
@@ -133,6 +141,7 @@ def test_explicit_python_language_ignores_java_changes(
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
     write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
     monkeypatch.chdir(tmp_path)
 
     assert main(["--language", "python"]) == EXIT_OK
@@ -143,24 +152,46 @@ def test_explicit_python_language_ignores_java_changes(
     assert "New complexity: +1" in output
 
 
+def test_explicit_go_language_ignores_java_and_python_changes(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
+    write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--language", "go"]) == EXIT_OK
+
+    output = capsys.readouterr().out
+    assert "Rule set: go.default" in output
+    assert "Analyzed files changed: 1" in output
+    assert "New complexity: +1" in output
+
+
 def test_auto_language_json_includes_rulesets(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
     write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
     monkeypatch.chdir(tmp_path)
 
     assert main(["--json"]) == EXIT_OK
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["ruleset"] == "auto"
-    assert payload["rulesets"] == ["java.default", "python.default"]
-    assert [file["path"] for file in payload["files"]] == ["src/Foo.java", "src/app.py"]
-    assert [file["language"] for file in payload["files"]] == ["java", "python"]
+    assert payload["rulesets"] == ["java.default", "python.default", "go.default"]
+    assert [file["path"] for file in payload["files"]] == [
+        "src/Foo.java",
+        "src/app.py",
+        "src/app.go",
+    ]
+    assert [file["language"] for file in payload["files"]] == ["java", "python", "go"]
 
 
-def test_auto_language_ck_metrics_report_includes_java_and_python(
+def test_auto_language_ck_metrics_report_includes_java_python_and_go(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     init_repo(tmp_path)
@@ -173,6 +204,13 @@ def test_auto_language_ck_metrics_report_includes_java_and_python(
         "    def __init__(self, client: Client):\n"
         "        self.client = client\n",
     )
+    write(
+        tmp_path,
+        "src/app.go",
+        "package app\n\n"
+        "type Service struct { client Client }\n"
+        "func (s *Service) Run() { _ = s.client }\n",
+    )
     monkeypatch.chdir(tmp_path)
 
     assert main(["--metrics", "ck"]) == EXIT_OK
@@ -183,6 +221,8 @@ def test_auto_language_ck_metrics_report_includes_java_and_python(
     assert "modified: Foo class" in output
     assert "M src/app.py" in output
     assert "added: Service class" in output
+    assert "M src/app.go" in output
+    assert "added: app.Service struct" in output
 
 
 def test_auto_language_ck_metrics_json(
@@ -191,14 +231,40 @@ def test_auto_language_ck_metrics_json(
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { Bar bar; void run() { bar.go(); } }\n")
     write(tmp_path, "src/app.py", "class Service:\n    def run(self):\n        return self.value\n")
+    write(tmp_path, "src/app.go", "package app\n\ntype Worker interface { Run(ctx Context) error }\n")
     monkeypatch.chdir(tmp_path)
 
     assert main(["--metrics", "ck", "--json"]) == EXIT_OK
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["metrics"] == "ck"
-    assert [file["language"] for file in payload["files"]] == ["java", "python"]
-    assert [file["classes"][0]["name"] for file in payload["files"]] == ["Foo", "Service"]
+    assert [file["language"] for file in payload["files"]] == ["java", "python", "go"]
+    assert [file["classes"][0]["name"] for file in payload["files"]] == [
+        "Foo",
+        "Service",
+        "Worker",
+    ]
+
+
+def test_explicit_go_ck_metrics_report(tmp_path: Path, monkeypatch, capsys) -> None:
+    init_repo(tmp_path)
+    write(
+        tmp_path,
+        "src/app.go",
+        "package app\n\n"
+        "type Service struct { client Client }\n"
+        "func (s *Service) Run() { _ = s.client }\n",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--metrics", "ck", "--language", "go"]) == EXIT_OK
+
+    output = capsys.readouterr().out
+    assert "M src/app.go" in output
+    assert "added: app.Service struct" in output
+    assert "CBO 0 -> 1 (delta +1)" in output
+    assert "LCOM 0 -> 0 (delta +0)" in output
+    assert "WMC 0 -> 1 (delta +1)" in output
 
 
 def test_explicit_language_json_includes_language(

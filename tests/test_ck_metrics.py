@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from diffcog.languages.go.metrics import score_class_metrics as score_go_class_metrics
+from diffcog.languages.go.parser import parse_snapshot as parse_go_snapshot
 from diffcog.languages.java.metrics import score_class_metrics as score_java_class_metrics
 from diffcog.languages.java.parser import parse_snapshot as parse_java_snapshot
 from diffcog.languages.python.metrics import score_class_metrics as score_python_class_metrics
@@ -93,3 +95,69 @@ def test_python_lcom_counts_disjoint_self_fields() -> None:
 
     assert metrics.lcom == 1
     assert metrics.wmc == 2
+
+
+def test_go_ck_metrics_count_struct_coupling_cohesion_and_methods() -> None:
+    snapshot = parse_go_snapshot(
+        "package app\n\n"
+        "type Service struct {\n"
+        "    client Client\n"
+        "    item Item\n"
+        "    count int\n"
+        "}\n"
+        "func (s *Service) First(ctx Context) Result { return s.client.Call(ctx) }\n"
+        "func (s Service) Second(raw Raw) { _ = s.item; var helper Helper }\n"
+        "func HelperFunc(raw Raw) Service { return Service{} }\n"
+    )
+
+    metrics = score_go_class_metrics(snapshot)[("app", "Service")]
+
+    assert metrics.cbo == 6
+    assert metrics.lcom == 1
+    assert metrics.wmc == 2
+
+
+def test_go_struct_lcom_zero_when_all_methods_use_no_declared_fields() -> None:
+    snapshot = parse_go_snapshot(
+        "package app\n\n"
+        "type Service struct { count int }\n"
+        "func (s *Service) First() { local := 1; _ = local }\n"
+        "func (s *Service) Second() { local := 2; _ = local }\n"
+    )
+
+    metrics = score_go_class_metrics(snapshot)[("app", "Service")]
+
+    assert metrics.lcom == 0
+    assert metrics.wmc == 2
+
+
+def test_go_interface_metrics_count_signatures_and_embeds() -> None:
+    snapshot = parse_go_snapshot(
+        "package app\n\n"
+        "type Runner interface {\n"
+        "    BaseRunner\n"
+        "    Run(ctx Context) Result\n"
+        "    Stop(reason Reason) error\n"
+        "}\n"
+    )
+
+    metrics = score_go_class_metrics(snapshot)[("app", "Runner")]
+
+    assert metrics.cbo == 4
+    assert metrics.lcom == 0
+    assert metrics.wmc == 2
+
+
+def test_go_parser_ignores_non_struct_interface_metric_types() -> None:
+    snapshot = parse_go_snapshot(
+        "package app\n\n"
+        "type Service struct{}\n"
+        "type Runner interface { Run() }\n"
+        "type Alias = Service\n"
+        "type Status int\n"
+    )
+
+    assert [(class_.namespace_path, class_.kind) for class_ in snapshot.classes] == [
+        (["app", "Service"], "struct"),
+        (["app", "Runner"], "interface"),
+    ]

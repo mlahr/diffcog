@@ -69,8 +69,10 @@ Select a language or built-in rule set:
 ```bash
 diffcog --language java
 diffcog --language python
+diffcog --language go
 diffcog --language java --ruleset java.default
 diffcog --language python --ruleset python.control-flow
+diffcog --language go --ruleset go.control-flow
 ```
 
 List available rule sets:
@@ -208,12 +210,13 @@ The default language mode is:
 auto
 ```
 
-Auto mode analyzes Java and Python changes in one run and uses each language's
+Auto mode analyzes Java, Python, and Go changes in one run and uses each language's
 default rule set:
 
 ```text
 java.default
 python.default
+go.default
 ```
 
 Built-in Java rule sets:
@@ -230,30 +233,38 @@ python.default       control flow plus boolean operator chains
 python.control-flow  control flow only
 ```
 
+Built-in Go rule sets:
+
+```text
+go.default       control flow plus boolean operator chains
+go.control-flow  control flow only
+```
+
 Unknown rule set names are usage errors.
 
-`--ruleset` may only be used with an explicit `--language java` or
-`--language python`. Auto mode always uses each language's default rule set.
+`--ruleset` may only be used with an explicit `--language java`,
+`--language python`, or `--language go`. Auto mode always uses each language's
+default rule set.
 
 `--list-rulesets` prints available rule set IDs and exits without reading git state.
-By default it lists all supported languages. With `--language java` or
-`--language python`, it lists only that language's rule sets.
+By default it lists all supported languages. With an explicit `--language`, it
+lists only that language's rule sets.
 
 See [docs/SCORING.md](docs/SCORING.md) for scoring semantics.
 
 ## CK Metrics
 
-`--metrics ck` switches the report from callable cognitive complexity to
-class-level CK metrics. It reports `CBO`, `LCOM`, and `WMC` before/after/delta
-values for classes in tracked changed files.
+`--metrics ck` switches the report from callable cognitive complexity to CK
+metrics. It reports `CBO`, `LCOM`, and `WMC` before/after/delta values for Java
+and Python classes and Go struct/interface types in tracked changed files.
 
 CK metrics are separate from cognitive complexity rule sets. `--metrics ck`
 does not use `--ruleset`, does not affect complexity thresholds, and is not a
 debug mode.
 
-`--metrics ck` can be used with `--language auto`, `--language java`, or
-`--language python`. Auto mode reports Java and Python classes in changed
-tracked `.java` and `.py` files.
+`--metrics ck` can be used with `--language auto`, `--language java`,
+`--language python`, or `--language go`. Auto mode reports Java, Python, and Go
+metric rows in changed tracked `.java`, `.py`, and `.go` files.
 
 `--metrics ck` cannot be combined with `--details`, `--hotspots`, `--debug`,
 `--list-rulesets`, or `--ruleset`.
@@ -282,7 +293,7 @@ diffcog --metrics history --history-days 30
 ```
 
 The history report respects `--language`, `--include`, and `--exclude`. With
-`--language auto`, Java and Python tracked files are included.
+`--language auto`, Java, Python, and Go tracked files are included.
 
 Hotspot scoring is file-level:
 
@@ -322,7 +333,7 @@ diffcog --exclude '**/generated/**' --exclude 'legacy'
 ```
 
 When no include is provided, all changed tracked files for the selected language
-mode are candidates. Auto mode includes tracked `.java` and `.py` files.
+mode are candidates. Auto mode includes tracked `.java`, `.py`, and `.go` files.
 
 When one or more includes are provided, only changed files matching those
 pathspecs are candidates.
@@ -331,7 +342,7 @@ Excludes are applied after includes.
 
 Path filters do not expand language scope. Even if an include pathspec matches
 files outside the active language adapter, only tracked files for that adapter
-are analyzed. Auto mode analyzes tracked `.java` and `.py` files only.
+are analyzed. Auto mode analyzes tracked `.java`, `.py`, and `.go` files only.
 
 ## Why Not Raw Diff As The Main Input?
 
@@ -378,7 +389,7 @@ diffcog --include PATHSPEC
 diffcog --exclude PATHSPEC
 ```
 
-Java and Python files are analyzed initially, through language adapters.
+Java, Python, and Go files are analyzed through language adapters.
 
 Text output is the default.
 

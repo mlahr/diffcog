@@ -218,6 +218,8 @@ def _score_class_metrics(
         from diffcog.languages.java.metrics import score_class_metrics
     elif language_id == "python":
         from diffcog.languages.python.metrics import score_class_metrics
+    elif language_id == "go":
+        from diffcog.languages.go.metrics import score_class_metrics
     else:
         return {}
     return score_class_metrics(snapshot)

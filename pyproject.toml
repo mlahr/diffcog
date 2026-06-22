@@ -6,13 +6,13 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "tree-sitter>=0.25",
+    "tree-sitter-go>=0.25",
     "tree-sitter-java>=0.23",
     "tree-sitter-python>=0.23",
 ]
 
 [project.scripts]
 diffcog = "diffcog.cli:main"
-diffcog-check = "diffcog.check:main"
 
 [dependency-groups]
 dev = [

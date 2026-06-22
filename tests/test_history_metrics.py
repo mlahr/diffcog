@@ -75,7 +75,7 @@ def test_history_metrics_json_includes_full_rows(
     payload = json.loads(capsys.readouterr().out)
     assert payload["metrics"] == "history"
     assert payload["history"]["days"] == 30
-    assert payload["history"]["languages"] == ["java", "python"]
+    assert payload["history"]["languages"] == ["java", "python", "go"]
     assert payload["hotspots"][0]["path"] == "src/Foo.java"
     assert payload["hotspots"][0]["current_complexity"] == 1
 
@@ -93,6 +93,20 @@ def test_history_metrics_respects_explicit_language(
     payload = json.loads(capsys.readouterr().out)
     assert payload["history"]["languages"] == ["python"]
     assert [row["path"] for row in payload["hotspots"]] == ["src/app.py"]
+
+
+def test_history_metrics_includes_go_hotspot(tmp_path: Path, monkeypatch, capsys) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
+    commit(tmp_path, "touch go")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["--metrics", "history", "--json"]) == EXIT_OK
+
+    payload = json.loads(capsys.readouterr().out)
+    go_hotspot = next(row for row in payload["hotspots"] if row["path"] == "src/app.go")
+    assert go_hotspot["language"] == "go"
+    assert go_hotspot["current_complexity"] == 1
 
 
 def test_history_metrics_respects_path_filters(

@@ -687,8 +687,8 @@ def test_ck_metrics_text_report() -> None:
 
     assert "CK metrics" in output
     assert (
-        "CBO = external type coupling; LCOM = lack of shared instance-field use; "
-        "WMC = instance method count"
+        "CBO = external type coupling; LCOM = lack of shared field use; "
+        "WMC = participating method count"
     ) in output
     assert "M src/Foo.java" in output
     assert "Old totals: CBO 0, LCOM 0, WMC 1" in output

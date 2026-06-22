@@ -124,11 +124,12 @@ def test_language_defaults_to_auto() -> None:
     assert args.language == "auto"
 
 
-def test_language_parses_java_and_python() -> None:
+def test_language_parses_java_python_and_go() -> None:
     parser = build_parser()
 
     assert parser.parse_args(["--language", "java"]).language == "java"
     assert parser.parse_args(["--language", "python"]).language == "python"
+    assert parser.parse_args(["--language", "go"]).language == "go"
 
 
 def test_unknown_language_exits_with_error() -> None:
@@ -319,6 +320,8 @@ def test_list_rulesets_exits_without_analysis(monkeypatch: pytest.MonkeyPatch, c
     assert "Python:" in output
     assert "python.default" in output
     assert "python.control-flow" in output
+    assert "go.default" in output
+    assert "go.control-flow" in output
 
 
 def test_list_rulesets_can_filter_by_language(

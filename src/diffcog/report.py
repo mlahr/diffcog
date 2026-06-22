@@ -87,7 +87,7 @@ def format_ck_metrics_text(result: AnalysisResult) -> str:
         f"Comparing {result.comparison.before.label} -> {result.comparison.after.label}",
         "",
         "CK metrics",
-        "CBO = external type coupling; LCOM = lack of shared instance-field use; WMC = instance method count",
+        "CBO = external type coupling; LCOM = lack of shared field use; WMC = participating method count",
         f"Old totals: CBO {totals['old']['cbo']}, LCOM {totals['old']['lcom']}, WMC {totals['old']['wmc']}",
         f"New totals: CBO {totals['new']['cbo']}, LCOM {totals['new']['lcom']}, WMC {totals['new']['wmc']}",
         "Delta totals: "
@@ -543,6 +543,7 @@ def _format_language_label(language_id: str) -> str:
     labels = {
         "java": "Java",
         "python": "Python",
+        "go": "Go",
     }
     return labels.get(language_id, language_id or "Unknown")
 

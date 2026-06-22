@@ -4,7 +4,7 @@ Measure cognitive complexity introduced by code changes.
 
 `diffcog` is a prototype command-line tool for reviewing how a change affects
 method-level cognitive complexity. It compares two Git-backed code states,
-parses the changed tracked Java and Python files, maps changed line ranges to
+parses the changed tracked Java, Python, and Go files, maps changed line ranges to
 callables, and reports before/after complexity deltas.
 
 The goal is to make complexity review fit naturally into local development and
@@ -23,9 +23,9 @@ the run when the introduced complexity crosses a configured threshold.
 
 ## Current scope
 
-`diffcog` currently analyzes tracked `.java` and `.py` files. Untracked files are
-ignored. Java and Python are implemented through separate language adapters,
-with `auto` mode running both adapters in one command.
+`diffcog` currently analyzes tracked `.java`, `.py`, and `.go` files. Untracked files are
+ignored. Java, Python, and Go are implemented through separate language adapters,
+with `auto` mode running all adapters in one command.
 
 This repository is still a prototype. The CLI contract is documented in
 [CLI.md](CLI.md), and scoring semantics are documented in
@@ -143,7 +143,7 @@ Exit codes:
 
 ## Languages and rule sets
 
-Auto mode is the default. It analyzes changed tracked Java and Python files in
+Auto mode is the default. It analyzes changed tracked Java, Python, and Go files in
 the same run, using each language adapter's default rule set.
 
 Select a language:
@@ -151,6 +151,7 @@ Select a language:
 ```bash
 diffcog --language java
 diffcog --language python
+diffcog --language go
 ```
 
 Select a built-in rule set:
@@ -160,6 +161,8 @@ diffcog --language java --ruleset java.default
 diffcog --language java --ruleset java.control-flow
 diffcog --language python --ruleset python.default
 diffcog --language python --ruleset python.control-flow
+diffcog --language go --ruleset go.default
+diffcog --language go --ruleset go.control-flow
 ```
 
 List available rule sets:
@@ -168,7 +171,7 @@ List available rule sets:
 diffcog --list-rulesets
 ```
 
-`--ruleset` requires an explicit `--language java` or `--language python`.
+`--ruleset` requires an explicit `--language java`, `--language python`, or `--language go`.
 Auto mode always uses each language adapter's default rule set.
 
 ## Path filtering
@@ -195,8 +198,9 @@ diffcog --metrics ck
 diffcog --metrics ck --json
 ```
 
-`--metrics ck` reports class-level `CBO`, `LCOM`, and `WMC` before/after/delta
-values for classes in tracked changed Java and Python files.
+`--metrics ck` reports `CBO`, `LCOM`, and `WMC` before/after/delta values for
+classes in tracked changed Java and Python files, and for struct/interface types
+in tracked changed Go files.
 
 Show history metrics:
 
@@ -240,7 +244,7 @@ full source content.
 Run the full project check:
 
 ```bash
-uv run diffcog-check
+uv run python -m diffcog.check
 ```
 
 Run tests or lint separately:

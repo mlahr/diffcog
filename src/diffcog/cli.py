@@ -83,7 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
     parser.add_argument(
         "--language",
-        choices=["auto", "java", "python"],
+        choices=["auto", "java", "python", "go"],
         default="auto",
         help="language to analyze",
     )

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from diffcog.languages.base import LanguageDefinition
+from diffcog.languages.go import GO_LANGUAGE
+from diffcog.languages.go.complexity import GO_RULESETS
 from diffcog.languages.java import JAVA_LANGUAGE
 from diffcog.languages.java.complexity import JAVA_RULESETS
 from diffcog.languages.python import PYTHON_LANGUAGE
@@ -32,12 +34,20 @@ PYTHON_SPEC = LanguageSpec(
     rule_sets=PYTHON_RULESETS,
 )
 
+GO_SPEC = LanguageSpec(
+    id="go",
+    display_name="Go",
+    language=GO_LANGUAGE,
+    rule_sets=GO_RULESETS,
+)
+
 LANGUAGE_SPECS = {
     JAVA_SPEC.id: JAVA_SPEC,
     PYTHON_SPEC.id: PYTHON_SPEC,
+    GO_SPEC.id: GO_SPEC,
 }
 
-LANGUAGE_ORDER = (JAVA_SPEC, PYTHON_SPEC)
+LANGUAGE_ORDER = (JAVA_SPEC, PYTHON_SPEC, GO_SPEC)
 
 
 def get_language_spec(language_id: str) -> LanguageSpec:
