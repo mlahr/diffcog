@@ -167,7 +167,7 @@ def format_delta_totals_json(result: AnalysisResult) -> str:
             "wmc": totals["delta"]["wmc"],
         },
     }
-    return json.dumps(payload, indent=2, sort_keys=False) + "\n"
+    return json.dumps(payload, separators=(",", ":"), sort_keys=False) + "\n"
 
 
 def format_ck_metrics_json(result: AnalysisResult) -> str:

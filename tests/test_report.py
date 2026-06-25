@@ -765,7 +765,8 @@ def test_delta_totals_json_report_shape() -> None:
         ],
     )
 
-    payload = json.loads(format_delta_totals_json(result))
+    output = format_delta_totals_json(result)
+    payload = json.loads(output)
 
     assert payload == {
         "comparison": {
@@ -776,6 +777,8 @@ def test_delta_totals_json_report_shape() -> None:
         "metrics": "delta_totals",
         "deltas": {"cog": 1, "cbo": 7, "lcom": -18, "wmc": 0},
     }
+    assert output.count("\n") == 1
+    assert output.endswith("\n")
 
 
 def test_ck_metrics_json_report_shape() -> None:

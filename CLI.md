@@ -298,8 +298,8 @@ metric delta totals.
 rule sets. It cannot be combined with `--metrics`, `--details`, `--hotspots`,
 `--debug`, or `--list-rulesets`.
 
-With `--json`, it prints `metrics: "delta_totals"` and a `deltas` object with
-`cog`, `cbo`, `lcom`, and `wmc` integer values.
+With `--json`, it prints one compact JSON line with `metrics: "delta_totals"`
+and a `deltas` object with `cog`, `cbo`, `lcom`, and `wmc` integer values.
 
 ## History Metrics
 
