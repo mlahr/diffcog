@@ -81,6 +81,14 @@ def test_hotspots_parses() -> None:
     assert args.hotspots is True
 
 
+def test_delta_totals_parses() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["--delta-totals"])
+
+    assert args.delta_totals is True
+
+
 def test_metrics_ck_parses() -> None:
     parser = build_parser()
 
@@ -219,6 +227,24 @@ def test_metrics_ck_rejects_other_report_modes(args: list[str], capsys: pytest.C
     assert "--metrics cannot be combined" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--delta-totals", "--details"],
+        ["--delta-totals", "--hotspots"],
+        ["--delta-totals", "--debug", "show-symbols"],
+        ["--delta-totals", "--list-rulesets"],
+        ["--delta-totals", "--metrics", "ck"],
+    ],
+)
+def test_delta_totals_rejects_other_report_modes(
+    args: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(args) == EXIT_ERROR
+
+    assert "--delta-totals cannot be combined" in capsys.readouterr().err
+
+
 def test_history_days_without_history_metrics_is_rejected(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -302,6 +328,114 @@ def test_max_delta_threshold_exits_two(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     assert main(["--max-delta", "1"]) == EXIT_THRESHOLD
+
+
+def test_delta_totals_prints_compact_report(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    comparison = Comparison(
+        mode="ref_to_worktree",
+        before=Endpoint(EndpointKind.REF, "HEAD"),
+        after=Endpoint(EndpointKind.WORKTREE, "working tree"),
+    )
+    result = AnalysisResult(
+        comparison=comparison,
+        files=[],
+        source_pairs=[],
+        new_complexity=1,
+        removed_complexity=0,
+        net_delta=1,
+    )
+    monkeypatch.setattr(
+        "diffcog.cli.analyze_languages",
+        lambda _comparison, _language_specs, path_filter=None: result,
+    )
+    monkeypatch.setattr(
+        "diffcog.cli.format_delta_totals_text",
+        lambda _result: "COG +1, CBO +7, LCOM -18, WMC +0\n",
+    )
+
+    assert main(["--delta-totals"]) == EXIT_OK
+    assert capsys.readouterr().out == "COG +1, CBO +7, LCOM -18, WMC +0\n"
+
+
+def test_delta_totals_json_prints_json_report(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    comparison = Comparison(
+        mode="ref_to_worktree",
+        before=Endpoint(EndpointKind.REF, "HEAD"),
+        after=Endpoint(EndpointKind.WORKTREE, "working tree"),
+    )
+    result = AnalysisResult(
+        comparison=comparison,
+        files=[],
+        source_pairs=[],
+        new_complexity=1,
+        removed_complexity=0,
+        net_delta=1,
+    )
+    monkeypatch.setattr(
+        "diffcog.cli.analyze_languages",
+        lambda _comparison, _language_specs, path_filter=None: result,
+    )
+    monkeypatch.setattr(
+        "diffcog.cli.format_delta_totals_json",
+        lambda _result: '{"metrics":"delta_totals"}\n',
+    )
+
+    assert main(["--delta-totals", "--json"]) == EXIT_OK
+    assert capsys.readouterr().out == '{"metrics":"delta_totals"}\n'
+
+
+def test_delta_totals_passes_path_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+    comparison = Comparison(
+        mode="ref_to_worktree",
+        before=Endpoint(EndpointKind.REF, "HEAD"),
+        after=Endpoint(EndpointKind.WORKTREE, "working tree"),
+    )
+    result = AnalysisResult(comparison=comparison, files=[], source_pairs=[])
+    captured_filter = None
+
+    def fake_analysis_languages(
+        _comparison: Comparison, _language_specs: object, *, path_filter: PathFilter | None = None
+    ) -> AnalysisResult:
+        nonlocal captured_filter
+        captured_filter = path_filter
+        return result
+
+    monkeypatch.setattr("diffcog.cli.analyze_languages", fake_analysis_languages)
+
+    assert main(["--delta-totals", "--include", "src/main", "--exclude", "**/generated/**"]) == EXIT_OK
+    assert captured_filter == PathFilter(
+        includes=("src/main",), excludes=("**/generated/**",)
+    )
+
+
+def test_delta_totals_respects_explicit_language(monkeypatch: pytest.MonkeyPatch) -> None:
+    comparison = Comparison(
+        mode="ref_to_worktree",
+        before=Endpoint(EndpointKind.REF, "HEAD"),
+        after=Endpoint(EndpointKind.WORKTREE, "working tree"),
+    )
+    result = AnalysisResult(comparison=comparison, files=[], source_pairs=[])
+    captured = None
+
+    def fake_analysis(
+        _comparison: Comparison,
+        *,
+        ruleset: object,
+        path_filter: PathFilter | None = None,
+        language: object,
+    ) -> AnalysisResult:
+        nonlocal captured
+        captured = (getattr(ruleset, "id", None), getattr(language, "id", None), path_filter)
+        return result
+
+    monkeypatch.setattr("diffcog.cli.analyze", fake_analysis)
+
+    assert main(["--delta-totals", "--language", "python", "--ruleset", "python.control-flow"]) == EXIT_OK
+    assert captured == ("python.control-flow", "python", None)
 
 
 def test_list_rulesets_exits_without_analysis(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

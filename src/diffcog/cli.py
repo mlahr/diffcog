@@ -33,6 +33,8 @@ from diffcog.models import (
 from diffcog.report import (
     format_ck_metrics_json,
     format_ck_metrics_text,
+    format_delta_totals_json,
+    format_delta_totals_text,
     format_history_metrics_json,
     format_history_metrics_text,
     format_json,
@@ -90,6 +92,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="exclude changed files matching a git pathspec",
     )
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
+    parser.add_argument(
+        "--delta-totals",
+        action="store_true",
+        help="print one-line cognitive and CK metric delta totals",
+    )
     parser.add_argument(
         "--language",
         choices=["auto", "java", "python", "go"],
@@ -200,7 +207,12 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_ERROR
 
     try:
-        if args.metrics == "ck":
+        if args.delta_totals:
+            if args.json:
+                print(format_delta_totals_json(result), end="")
+            else:
+                print(format_delta_totals_text(result), end="")
+        elif args.metrics == "ck":
             if args.json:
                 print(format_ck_metrics_json(result), end="")
             else:
@@ -385,7 +397,18 @@ def _validate_report_mode(args: argparse.Namespace) -> None:
     if args.metrics is None:
         if args.history_days != DEFAULT_HISTORY_DAYS:
             raise ValueError("--history-days can only be used with --metrics history")
+        if args.delta_totals:
+            if args.details:
+                raise ValueError("--delta-totals cannot be combined with --details")
+            if args.hotspots:
+                raise ValueError("--delta-totals cannot be combined with --hotspots")
+            if args.debug is not None:
+                raise ValueError("--delta-totals cannot be combined with --debug")
+            if args.list_rulesets:
+                raise ValueError("--delta-totals cannot be combined with --list-rulesets")
         return
+    if args.delta_totals:
+        raise ValueError("--delta-totals cannot be combined with --metrics")
     if args.details:
         raise ValueError("--metrics cannot be combined with --details")
     if args.hotspots:

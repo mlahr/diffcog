@@ -94,6 +94,13 @@ diffcog --metrics ck
 diffcog --metrics ck --json
 ```
 
+Show compact delta totals:
+
+```bash
+diffcog --delta-totals
+diffcog --delta-totals --json
+```
+
 Show Tornhill-style history metrics:
 
 ```bash
@@ -274,6 +281,25 @@ metric rows in changed tracked `.java`, `.py`, and `.go` files.
 
 `--metrics ck` cannot be combined with `--details`, `--hotspots`, `--debug`,
 `--list-rulesets`, or `--ruleset`.
+
+## Delta Totals
+
+`--delta-totals` prints one compact line with cognitive-complexity net delta and
+CK metric delta totals:
+
+```text
+COG +1, CBO +7, LCOM -18, WMC +0
+```
+
+`COG` is the cognitive-complexity net delta. `CBO`, `LCOM`, and `WMC` are CK
+metric delta totals.
+
+`--delta-totals` respects `--language`, `--include`, `--exclude`, and explicit
+rule sets. It cannot be combined with `--metrics`, `--details`, `--hotspots`,
+`--debug`, or `--list-rulesets`.
+
+With `--json`, it prints `metrics: "delta_totals"` and a `deltas` object with
+`cog`, `cbo`, `lcom`, and `wmc` integer values.
 
 ## History Metrics
 

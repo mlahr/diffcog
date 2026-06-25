@@ -141,6 +141,35 @@ def format_ck_metrics_text(result: AnalysisResult) -> str:
     return "\n".join(lines) + "\n"
 
 
+def format_delta_totals_text(result: AnalysisResult) -> str:
+    totals = _ck_totals(result)
+    return (
+        f"COG {_format_signed(result.net_delta)}, "
+        f"CBO {_format_signed(totals['delta']['cbo'])}, "
+        f"LCOM {_format_signed(totals['delta']['lcom'])}, "
+        f"WMC {_format_signed(totals['delta']['wmc'])}\n"
+    )
+
+
+def format_delta_totals_json(result: AnalysisResult) -> str:
+    totals = _ck_totals(result)
+    payload: dict[str, Any] = {
+        "comparison": {
+            "mode": result.comparison.mode,
+            "before": result.comparison.before.label,
+            "after": result.comparison.after.label,
+        },
+        "metrics": "delta_totals",
+        "deltas": {
+            "cog": result.net_delta,
+            "cbo": totals["delta"]["cbo"],
+            "lcom": totals["delta"]["lcom"],
+            "wmc": totals["delta"]["wmc"],
+        },
+    }
+    return json.dumps(payload, indent=2, sort_keys=False) + "\n"
+
+
 def format_ck_metrics_json(result: AnalysisResult) -> str:
     payload: dict[str, Any] = {
         "comparison": {

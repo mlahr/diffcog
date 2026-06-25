@@ -13,6 +13,8 @@ from diffcog.models import SourcePair
 from diffcog.report import (
     format_ck_metrics_json,
     format_ck_metrics_text,
+    format_delta_totals_json,
+    format_delta_totals_text,
     format_json,
     format_complexity_json,
     format_complexity_text,
@@ -698,6 +700,82 @@ def test_ck_metrics_text_report() -> None:
     assert "CBO 0 -> 1 (delta +1)" in output
     assert "LCOM 0 -> 0 (delta +0)" in output
     assert "WMC 1 -> 1 (delta +0)" in output
+
+
+def test_delta_totals_text_report_is_one_line() -> None:
+    file = _file()
+    before_class = parse_snapshot("class Foo { A a; B b; void a() {} void b() {} }\n").classes[0]
+    after_class = parse_snapshot("class Foo { C c; void a() {} }\n").classes[0]
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[file],
+        source_pairs=[],
+        net_delta=1,
+        class_metric_deltas=[
+            FileClassMetricsDelta(
+                file=file,
+                before_present=True,
+                after_present=True,
+                before_parse_error=False,
+                after_parse_error=False,
+                classes=[
+                    ClassMetricsDelta(
+                        status="modified",
+                        before_class=before_class,
+                        after_class=after_class,
+                        before_metrics=ClassMetrics(cbo=0, lcom=18, wmc=1),
+                        after_metrics=ClassMetrics(cbo=7, lcom=0, wmc=1),
+                        delta=ClassMetrics(cbo=7, lcom=-18, wmc=0),
+                    )
+                ],
+            )
+        ],
+    )
+
+    assert format_delta_totals_text(result) == "COG +1, CBO +7, LCOM -18, WMC +0\n"
+
+
+def test_delta_totals_json_report_shape() -> None:
+    file = _file()
+    before_class = parse_snapshot("class Foo { A a; B b; void a() {} void b() {} }\n").classes[0]
+    after_class = parse_snapshot("class Foo { C c; void a() {} }\n").classes[0]
+    result = AnalysisResult(
+        comparison=_comparison(),
+        files=[file],
+        source_pairs=[],
+        net_delta=1,
+        class_metric_deltas=[
+            FileClassMetricsDelta(
+                file=file,
+                before_present=True,
+                after_present=True,
+                before_parse_error=False,
+                after_parse_error=False,
+                classes=[
+                    ClassMetricsDelta(
+                        status="modified",
+                        before_class=before_class,
+                        after_class=after_class,
+                        before_metrics=ClassMetrics(cbo=0, lcom=18, wmc=1),
+                        after_metrics=ClassMetrics(cbo=7, lcom=0, wmc=1),
+                        delta=ClassMetrics(cbo=7, lcom=-18, wmc=0),
+                    )
+                ],
+            )
+        ],
+    )
+
+    payload = json.loads(format_delta_totals_json(result))
+
+    assert payload == {
+        "comparison": {
+            "mode": "ref_to_worktree",
+            "before": "HEAD",
+            "after": "working tree",
+        },
+        "metrics": "delta_totals",
+        "deltas": {"cog": 1, "cbo": 7, "lcom": -18, "wmc": 0},
+    }
 
 
 def test_ck_metrics_json_report_shape() -> None:

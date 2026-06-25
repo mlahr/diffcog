@@ -213,6 +213,17 @@ diffcog --metrics ck --json
 classes in tracked changed Java and Python files, and for struct/interface types
 in tracked changed Go files.
 
+Show compact delta totals:
+
+```bash
+diffcog --delta-totals
+diffcog --delta-totals --json
+```
+
+`--delta-totals` prints one line like `COG +1, CBO +7, LCOM -18, WMC +0`.
+`COG` is cognitive-complexity net delta; the other values are CK metric delta
+totals. It respects `--language`, `--include`, and `--exclude`.
+
 Show history metrics:
 
 ```bash
