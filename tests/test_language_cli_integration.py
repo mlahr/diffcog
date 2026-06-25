@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 from pathlib import Path
 
-from diffcog.cli import EXIT_OK, main
+from diffcog.cli import EXIT_ERROR, EXIT_OK, main
 
 
 def git(repo: Path, *args: str) -> str:
@@ -36,12 +37,12 @@ def init_repo(repo: Path) -> None:
     git(repo, "commit", "-m", "initial")
 
 
-def test_auto_language_reports_java_and_python_changes(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
+def test_auto_language_reports_java_and_python_changes(tmp_path: Path, monkeypatch, capsys) -> None:
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
-    write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    write(
+        tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n"
+    )
     write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
     monkeypatch.chdir(tmp_path)
 
@@ -53,12 +54,77 @@ def test_auto_language_reports_java_and_python_changes(
     assert "New complexity: +3" in output
 
 
-def test_auto_language_details_group_by_language(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
+def test_piped_git_diff_reports_complexity(tmp_path: Path, monkeypatch, capsys) -> None:
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
-    write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    git(tmp_path, "add", "src/Foo.java")
+    git(tmp_path, "commit", "-m", "modify java")
+    diff_text = git(tmp_path, "diff", "--unified=0", "HEAD~1..HEAD")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.stdin", io.StringIO(diff_text))
+
+    assert main([]) == EXIT_OK
+
+    output = capsys.readouterr().out
+    assert "Comparing stdin diff before blobs -> stdin diff after blobs" in output
+    assert "Analyzed files changed: 1" in output
+    assert "New complexity: +1" in output
+
+
+def test_piped_git_diff_supports_json_output(tmp_path: Path, monkeypatch, capsys) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
+    git(tmp_path, "add", "src/Foo.java")
+    git(tmp_path, "commit", "-m", "modify java")
+    diff_text = git(tmp_path, "diff", "--unified=0", "HEAD~1..HEAD")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.stdin", io.StringIO(diff_text))
+
+    assert main(["--json"]) == EXIT_OK
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["comparison"] == {
+        "mode": "stdin_diff",
+        "before": "stdin diff before blobs",
+        "after": "stdin diff after blobs",
+    }
+    assert payload["files"][0]["path"] == "src/Foo.java"
+    assert payload["new_complexity"] == 1
+
+
+def test_piped_git_diff_supports_ck_metrics(tmp_path: Path, monkeypatch, capsys) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { Bar bar; void run() { bar.go(); } }\n")
+    git(tmp_path, "add", "src/Foo.java")
+    git(tmp_path, "commit", "-m", "modify java")
+    diff_text = git(tmp_path, "diff", "--unified=0", "HEAD~1..HEAD")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.stdin", io.StringIO(diff_text))
+
+    assert main(["--metrics", "ck"]) == EXIT_OK
+
+    output = capsys.readouterr().out
+    assert "Comparing stdin diff before blobs -> stdin diff after blobs" in output
+    assert "CK metrics" in output
+    assert "M src/Foo.java" in output
+
+
+def test_piped_git_diff_rejects_history_metrics(tmp_path: Path, monkeypatch, capsys) -> None:
+    init_repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.stdin", io.StringIO("diff --git a/src/Foo.java b/src/Foo.java\n"))
+
+    assert main(["--metrics", "history"]) == EXIT_ERROR
+
+    assert "--metrics history cannot be used with piped diff input" in capsys.readouterr().err
+
+
+def test_auto_language_details_group_by_language(tmp_path: Path, monkeypatch, capsys) -> None:
+    init_repo(tmp_path)
+    write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
+    write(
+        tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n"
+    )
     write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
     monkeypatch.chdir(tmp_path)
 
@@ -80,10 +146,7 @@ def test_auto_language_hotspots_include_language_labels_and_global_order(
     write(
         tmp_path,
         "src/app.py",
-        "def run(a, b, c):\n"
-        "    if a and b and c:\n"
-        "        return 1\n"
-        "    return 0\n",
+        "def run(a, b, c):\n    if a and b and c:\n        return 1\n    return 0\n",
     )
     write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
     monkeypatch.chdir(tmp_path)
@@ -104,10 +167,7 @@ def test_explicit_language_hotspots_do_not_include_language_labels(
     write(
         tmp_path,
         "src/app.py",
-        "def run(a, b, c):\n"
-        "    if a and b and c:\n"
-        "        return 1\n"
-        "    return 0\n",
+        "def run(a, b, c):\n    if a and b and c:\n        return 1\n    return 0\n",
     )
     monkeypatch.chdir(tmp_path)
 
@@ -118,12 +178,12 @@ def test_explicit_language_hotspots_do_not_include_language_labels(
     assert "[Python]" not in output
 
 
-def test_explicit_java_language_ignores_python_changes(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
+def test_explicit_java_language_ignores_python_changes(tmp_path: Path, monkeypatch, capsys) -> None:
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
-    write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    write(
+        tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n"
+    )
     write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
     monkeypatch.chdir(tmp_path)
 
@@ -135,12 +195,12 @@ def test_explicit_java_language_ignores_python_changes(
     assert "New complexity: +1" in output
 
 
-def test_explicit_python_language_ignores_java_changes(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
+def test_explicit_python_language_ignores_java_changes(tmp_path: Path, monkeypatch, capsys) -> None:
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
-    write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    write(
+        tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n"
+    )
     write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
     monkeypatch.chdir(tmp_path)
 
@@ -157,7 +217,9 @@ def test_explicit_go_language_ignores_java_and_python_changes(
 ) -> None:
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
-    write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    write(
+        tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n"
+    )
     write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
     monkeypatch.chdir(tmp_path)
 
@@ -169,12 +231,12 @@ def test_explicit_go_language_ignores_java_and_python_changes(
     assert "New complexity: +1" in output
 
 
-def test_auto_language_json_includes_rulesets(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
+def test_auto_language_json_includes_rulesets(tmp_path: Path, monkeypatch, capsys) -> None:
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
-    write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    write(
+        tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n"
+    )
     write(tmp_path, "src/app.go", "package app\n\nfunc Run(value bool) { if value { work() } }\n")
     monkeypatch.chdir(tmp_path)
 
@@ -225,13 +287,13 @@ def test_auto_language_ck_metrics_report_includes_java_python_and_go(
     assert "added: app.Service struct" in output
 
 
-def test_auto_language_ck_metrics_json(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
+def test_auto_language_ck_metrics_json(tmp_path: Path, monkeypatch, capsys) -> None:
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { Bar bar; void run() { bar.go(); } }\n")
     write(tmp_path, "src/app.py", "class Service:\n    def run(self):\n        return self.value\n")
-    write(tmp_path, "src/app.go", "package app\n\ntype Worker interface { Run(ctx Context) error }\n")
+    write(
+        tmp_path, "src/app.go", "package app\n\ntype Worker interface { Run(ctx Context) error }\n"
+    )
     monkeypatch.chdir(tmp_path)
 
     assert main(["--metrics", "ck", "--json"]) == EXIT_OK
@@ -267,11 +329,11 @@ def test_explicit_go_ck_metrics_report(tmp_path: Path, monkeypatch, capsys) -> N
     assert "WMC 0 -> 1 (delta +1)" in output
 
 
-def test_explicit_language_json_includes_language(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
+def test_explicit_language_json_includes_language(tmp_path: Path, monkeypatch, capsys) -> None:
     init_repo(tmp_path)
-    write(tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n")
+    write(
+        tmp_path, "src/app.py", "def run(value):\n    if value:\n        return 1\n    return 0\n"
+    )
     monkeypatch.chdir(tmp_path)
 
     assert main(["--language", "python", "--json"]) == EXIT_OK

@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import sys
 
-from diffcog.analysis import analyze, analyze_languages
+from diffcog.analysis import analyze, analyze_languages, analyze_source_pairs
 from diffcog.debug_analysis import (
     build_complexity_debug_for_languages,
     build_language_complexity_debug,
     build_symbol_debug,
     build_symbol_debug_for_languages,
 )
+from diffcog.diff_input import source_pairs_from_diff
 from diffcog.errors import DiffcogError
 from diffcog.git import GitError
 from diffcog.history import DEFAULT_HISTORY_DAYS, analyze_history_metrics
@@ -20,7 +22,14 @@ from diffcog.languages.registry import (
     get_ruleset,
     list_ruleset_ids,
 )
-from diffcog.models import Comparison, Endpoint, EndpointKind, PathFilter, Thresholds
+from diffcog.models import (
+    AnalysisResult,
+    Comparison,
+    Endpoint,
+    EndpointKind,
+    PathFilter,
+    Thresholds,
+)
 from diffcog.report import (
     format_ck_metrics_json,
     format_ck_metrics_text,
@@ -139,11 +148,30 @@ def main(argv: list[str] | None = None) -> int:
         if args.language == "auto" and args.ruleset is not None:
             raise ValueError("--ruleset cannot be used with --language auto")
 
-        comparison = resolve_comparison(args.refs, staged=args.staged, unstaged=args.unstaged)
+        ruleset = None
         thresholds = Thresholds(max_new=args.max_new, max_delta=args.max_delta)
         path_filter = PathFilter(includes=tuple(args.include), excludes=tuple(args.exclude))
+        diff_text = _stdin_diff_text(args)
+        if diff_text is not None and args.metrics == "history":
+            raise ValueError("--metrics history cannot be used with piped diff input")
 
-        if args.metrics == "history":
+        comparison = (
+            _stdin_diff_comparison()
+            if diff_text is not None
+            else resolve_comparison(args.refs, staged=args.staged, unstaged=args.unstaged)
+        )
+
+        if diff_text is not None:
+            if args.language != "auto":
+                ruleset = get_ruleset(language_specs[0], args.ruleset)
+            result = _analyze_stdin_diff(
+                diff_text,
+                comparison,
+                language_specs,
+                ruleset=ruleset,
+                explicit_language=args.language != "auto",
+            )
+        elif args.metrics == "history":
             result = analyze_history_metrics(
                 comparison,
                 language_specs,
@@ -210,7 +238,10 @@ def main(argv: list[str] | None = None) -> int:
         elif args.json:
             print(format_json(result, thresholds), end="")
         else:
-            print(format_text(result, thresholds, details=args.details, hotspots=args.hotspots), end="")
+            print(
+                format_text(result, thresholds, details=args.details, hotspots=args.hotspots),
+                end="",
+            )
     except DiffcogError as exc:
         print(f"diffcog: error: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -262,6 +293,65 @@ def resolve_comparison(refs: list[str], *, staged: bool, unstaged: bool) -> Comp
         mode="ref_to_worktree",
         before=Endpoint(EndpointKind.REF, "HEAD"),
         after=Endpoint(EndpointKind.WORKTREE, "working tree"),
+    )
+
+
+def _stdin_diff_text(args: argparse.Namespace) -> str | None:
+    if args.refs or args.staged or args.unstaged or args.list_rulesets:
+        return None
+    try:
+        if sys.stdin.isatty():
+            return None
+        return sys.stdin.read()
+    except OSError:
+        return None
+
+
+def _stdin_diff_comparison() -> Comparison:
+    return Comparison(
+        mode="stdin_diff",
+        before=Endpoint(EndpointKind.DIFF, "stdin diff before blobs"),
+        after=Endpoint(EndpointKind.DIFF, "stdin diff after blobs"),
+    )
+
+
+def _analyze_stdin_diff(
+    diff_text: str,
+    comparison: Comparison,
+    language_specs: tuple[LanguageSpec, ...],
+    *,
+    ruleset: object | None,
+    explicit_language: bool,
+) -> AnalysisResult:
+    results = []
+    for spec in language_specs:
+        active_ruleset = ruleset if explicit_language else spec.language.default_ruleset
+        source_pairs = source_pairs_from_diff(diff_text, spec.language.file_extensions)
+        results.append(
+            analyze_source_pairs(
+                comparison,
+                source_pairs,
+                ruleset=active_ruleset,
+                language=spec.language,
+            )
+        )
+
+    if len(results) == 1:
+        return results[0]
+
+    return replace(
+        results[0],
+        files=[file for result in results for file in result.files],
+        source_pairs=[source_pair for result in results for source_pair in result.source_pairs],
+        ruleset_id="auto",
+        rule_set_ids=tuple(result.ruleset_id for result in results),
+        file_deltas=[file_delta for result in results for file_delta in result.file_deltas],
+        class_metric_deltas=[
+            file_delta for result in results for file_delta in result.class_metric_deltas
+        ],
+        new_complexity=sum(result.new_complexity for result in results),
+        removed_complexity=sum(result.removed_complexity for result in results),
+        net_delta=sum(result.net_delta for result in results),
     )
 
 

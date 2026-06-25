@@ -37,11 +37,31 @@ def analyze(
         for file in discover_changed_files(comparison, language.file_extensions, cwd, path_filter)
     ]
     source_pairs = load_source_pairs(comparison, files, cwd)
+    return analyze_source_pairs(comparison, source_pairs, ruleset=active_ruleset, language=language)
+
+
+def analyze_source_pairs(
+    comparison: Comparison,
+    source_pairs: list[SourcePair],
+    ruleset: Any | None = None,
+    language: LanguageDefinition = JAVA_LANGUAGE,
+) -> AnalysisResult:
+    active_ruleset = ruleset or language.default_ruleset
+    typed_source_pairs = [
+        SourcePair(
+            file=replace(source_pair.file, language_id=language.id),
+            before=source_pair.before,
+            after=source_pair.after,
+        )
+        for source_pair in source_pairs
+    ]
+    files = [source_pair.file for source_pair in typed_source_pairs]
     file_deltas = [
-        _analyze_source_pair(source_pair, language, active_ruleset) for source_pair in source_pairs
+        _analyze_source_pair(source_pair, language, active_ruleset)
+        for source_pair in typed_source_pairs
     ]
     class_metric_deltas = [
-        _analyze_class_metrics(source_pair, language) for source_pair in source_pairs
+        _analyze_class_metrics(source_pair, language) for source_pair in typed_source_pairs
     ]
     new_complexity = sum(
         max(callable_delta.delta, 0)
@@ -56,7 +76,7 @@ def analyze(
     return AnalysisResult(
         comparison=comparison,
         files=files,
-        source_pairs=source_pairs,
+        source_pairs=typed_source_pairs,
         ruleset_id=active_ruleset.id,
         rule_set_ids=(active_ruleset.id,),
         file_deltas=file_deltas,

@@ -9,6 +9,7 @@ class EndpointKind(str, Enum):
     REF = "ref"
     WORKTREE = "worktree"
     INDEX = "index"
+    DIFF = "diff"
 
 
 @dataclass(frozen=True)

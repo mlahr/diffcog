@@ -68,6 +68,12 @@ diffcog HEAD~1 HEAD
 diffcog main HEAD
 ```
 
+Analyze a Git diff supplied on stdin:
+
+```bash
+git diff main..HEAD | diffcog
+```
+
 Compare `HEAD` against staged changes only:
 
 ```bash
@@ -105,6 +111,11 @@ after  = working tree
 ```
 
 When both refs are explicit, uncommitted changes are ignored.
+
+When a Git diff is supplied on stdin with no refs or staged/unstaged option,
+`diffcog` reads changed paths and changed line ranges from the diff stream, then
+loads complete before/after source snapshots from the Git blob IDs in the diff.
+Patch-only input without blob IDs is rejected.
 
 ## Output modes
 

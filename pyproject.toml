@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 diffcog = "diffcog.cli:main"
+diffcog-check = "diffcog.check:main"
 
 [dependency-groups]
 dev = [

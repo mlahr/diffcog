@@ -64,6 +64,12 @@ Compare the index to unstaged changes only:
 diffcog --unstaged
 ```
 
+Analyze a Git diff supplied on stdin:
+
+```bash
+git diff BASE..HEAD | diffcog
+```
+
 Select a language or built-in rule set:
 
 ```bash
@@ -344,9 +350,13 @@ Path filters do not expand language scope. Even if an include pathspec matches
 files outside the active language adapter, only tracked files for that adapter
 are analyzed. Auto mode analyzes tracked `.java`, `.py`, and `.go` files only.
 
-## Why Not Raw Diff As The Main Input?
+## Piped Git Diff Input
 
-A raw unified diff identifies changed files and changed line ranges, but it does not provide enough context to compute method-level cognitive complexity reliably.
+A Git unified diff supplied on stdin is supported as a secondary input mode:
+
+```bash
+git diff main..HEAD | diffcog
+```
 
 The analyzer needs complete source for both sides:
 
@@ -355,7 +365,17 @@ before source = full file content at BASE
 after source  = full file content at TARGET or working tree
 ```
 
-So `diffcog` should own the git plumbing:
+For piped Git diffs, `diffcog` reads changed paths and changed line ranges from
+the diff stream, then loads complete before/after source snapshots from the Git
+blob IDs in each `index OLD..NEW` header.
+
+Patch-only input without Git blob IDs is rejected because it cannot provide
+complete source snapshots reliably.
+
+`--metrics history` cannot be used with piped diff input because history mining
+needs a resolved Git endpoint.
+
+The primary interface remains Git-backed comparison resolution:
 
 ```text
 resolve comparison
@@ -366,14 +386,6 @@ resolve comparison
   -> compute before/after complexity
   -> report delta
 ```
-
-Raw diff input can be added later as a secondary mode:
-
-```bash
-git diff main...HEAD | diffcog --diff -
-```
-
-But it should not be the primary interface.
 
 ## Initial Scope
 
