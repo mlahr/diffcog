@@ -118,6 +118,9 @@ def _parse_diff(diff_text: str) -> list[_DiffFile]:
         if new_range is not None:
             current.new_ranges.append(new_range)
 
+    if diff_text.strip() and not files:
+        raise DiffcogError("stdin input is not a Git diff")
+
     return files
 
 

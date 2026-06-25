@@ -123,3 +123,12 @@ def test_source_pairs_from_diff_rejects_supported_patch_without_blob_ids() -> No
 
     with pytest.raises(DiffcogError, match="missing a before blob"):
         source_pairs_from_diff(diff_text, (".java",))
+
+
+def test_source_pairs_from_diff_rejects_non_diff_text() -> None:
+    with pytest.raises(DiffcogError, match="stdin input is not a Git diff"):
+        source_pairs_from_diff("THIS IS NOT A DIFF\n", (".java",))
+
+
+def test_source_pairs_from_diff_allows_empty_diff() -> None:
+    assert source_pairs_from_diff("", (".java",)) == []

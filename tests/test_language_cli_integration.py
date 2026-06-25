@@ -119,6 +119,18 @@ def test_piped_git_diff_rejects_history_metrics(tmp_path: Path, monkeypatch, cap
     assert "--metrics history cannot be used with piped diff input" in capsys.readouterr().err
 
 
+def test_piped_non_diff_text_exits_with_error(tmp_path: Path, monkeypatch, capsys) -> None:
+    init_repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.stdin", io.StringIO("THIS IS NOT A DIFF\n"))
+
+    assert main([]) == EXIT_ERROR
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "stdin input is not a Git diff" in captured.err
+
+
 def test_auto_language_details_group_by_language(tmp_path: Path, monkeypatch, capsys) -> None:
     init_repo(tmp_path)
     write(tmp_path, "src/Foo.java", "class Foo { void run() { if (x) { go(); } } }\n")
